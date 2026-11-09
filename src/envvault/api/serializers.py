@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from envvault.models import ApiToken, AuditEntry, Project, Secret
+from envvault.models import ApiToken, AuditEntry, Credential, Project, Secret
 from envvault.services.projects import environments
 from envvault.services.tokens import command_list, environment_list
 from envvault.services.vault import VaultStatus
@@ -49,6 +49,25 @@ def secret_payload(secret: Secret) -> dict[str, Any]:
         "version": secret.version,
         "created_at": _iso(secret.created_at),
         "updated_at": _iso(secret.updated_at),
+    }
+
+
+def credential_payload(credential: Credential) -> dict[str, Any]:
+    """Credential metadata; the encrypted fields only appear on reveal."""
+    project = credential.project
+    return {
+        "id": credential.id,
+        "name": credential.name,
+        "category": credential.category,
+        "version": credential.version,
+        "scope": "project" if project is not None else "global",
+        "project": (
+            {"id": project.id, "slug": project.slug, "name": project.name}
+            if project is not None
+            else None
+        ),
+        "created_at": _iso(credential.created_at),
+        "updated_at": _iso(credential.updated_at),
     }
 
 

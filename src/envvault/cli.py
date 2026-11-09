@@ -39,8 +39,13 @@ app = typer.Typer(
 )
 project_app = typer.Typer(help="Gerencia projetos registrados.", no_args_is_help=True)
 token_app = typer.Typer(help="Gerencia tokens de agente.", no_args_is_help=True)
+credential_app = typer.Typer(
+    help="Gerencia credenciais de serviços (hosting, DNS, e-mail…).",
+    no_args_is_help=True,
+)
 app.add_typer(project_app, name="project")
 app.add_typer(token_app, name="token")
+app.add_typer(credential_app, name="credential")
 
 console = Console()
 PROJECT_FILE = ".envvault.toml"
@@ -164,6 +169,23 @@ def _find_project(session: UserSession, slug: str) -> dict[str, Any]:
         if item["slug"] == slug:
             return item
     raise CliError(f"projeto não encontrado: {slug} (use `envvault project add`)")
+
+
+def _find_credential(session: UserSession, identifier: str) -> dict[str, Any]:
+    """Resolve a credential by id first, then by exact name."""
+    items = session.request("GET", "/v1/credentials").json()["items"]
+    for item in items:
+        if item["id"] == identifier:
+            return item
+    matches = [item for item in items if item["name"] == identifier]
+    if not matches:
+        raise CliError(f"credencial não encontrada: {identifier}")
+    if len(matches) > 1:
+        raise CliError(
+            f"há mais de uma credencial chamada {identifier}; use o id "
+            "(veja com `envvault credential list`)"
+        )
+    return matches[0]
 
 
 def _project_config() -> dict[str, str] | None:
@@ -829,6 +851,223 @@ def token_revoke(
             raise typer.Exit(1)
         session.request("DELETE", f"/v1/tokens/{matches[0]['id']}")
         console.print(f"[yellow]Token revogado:[/yellow] {name}")
+    finally:
+        session.close()
+
+
+# --------------------------------------------------------------------------- #
+# credentials
+# --------------------------------------------------------------------------- #
+@credential_app.command("add")
+def credential_add(
+    name: str = typer.Argument(..., help="Nome visível, ex.: Hostinger"),
+    category: str = typer.Option(
+        "other", "--category", "-c", help="hosting, dns, email, smtp, api, database…"
+    ),
+    username: str = typer.Option("", "--username", "-u", help="Usuário ou e-mail"),
+    url: str = typer.Option("", "--url", help="URL do painel/serviço"),
+    notes: str = typer.Option("", "--notes", "-n", help="Observações (ficam criptografadas)"),
+    password: str | None = typer.Option(
+        None, "--password", help="Senha literal (evite: fica no histórico do shell)"
+    ),
+    generate: bool = typer.Option(False, "--generate", help="Gerar uma senha forte"),
+    length: int = typer.Option(DEFAULT_LENGTH, "--length", help="Tamanho ao gerar"),
+    project: str | None = typer.Option(
+        None, "--project", "-p", help="Slug do projeto (omita para credencial global)"
+    ),
+) -> None:
+    """Adiciona uma credencial de serviço (campos sensíveis criptografados)."""
+    if generate:
+        secret_value = generate_password(PasswordOptions(length=length))
+        console.print(
+            "[yellow]Senha gerada e salva no cofre. Use "
+            "`envvault credential show` para vê-la.[/yellow]"
+        )
+    elif password is not None:
+        secret_value = password
+    else:
+        secret_value = typer.prompt(f"Senha de {name}", hide_input=True)
+    settings = Settings.from_env()
+    session = _login(settings)
+    try:
+        project_id = _find_project(session, project)["id"] if project else None
+        item = session.request(
+            "POST",
+            "/v1/credentials",
+            json={
+                "name": name,
+                "category": category,
+                "username": username,
+                "password": secret_value,
+                "url": url,
+                "notes": notes,
+                "project_id": project_id,
+            },
+        ).json()["item"]
+        console.print(
+            f"[green]Credencial criada:[/green] {item['name']} "
+            f"({item['category']}, {item['project']['slug'] if item['project'] else 'global'}) "
+            f"· id {item['id']}"
+        )
+    finally:
+        session.close()
+
+
+@credential_app.command("list")
+def credential_list(
+    query: str | None = typer.Option(None, "--query", "-q", help="Buscar por nome/categoria"),
+    category: str | None = typer.Option(None, "--category", "-c"),
+    project: str | None = typer.Option(None, "--project", "-p", help="Filtrar por projeto"),
+    only_global: bool = typer.Option(False, "--global", help="Somente credenciais globais"),
+) -> None:
+    """Lista credenciais (somente metadados, nunca os valores)."""
+    if project and only_global:
+        _fail("use --project ou --global, não os dois")
+    settings = Settings.from_env()
+    session = _login(settings)
+    try:
+        params: dict[str, Any] = {}
+        if query:
+            params["query"] = query
+        if category:
+            params["category"] = category
+        if project:
+            params["project_id"] = _find_project(session, project)["id"]
+        if only_global:
+            params["global_only"] = "true"
+        items = session.request("GET", "/v1/credentials", params=params).json()["items"]
+        rows = [
+            [
+                item["name"],
+                item["category"],
+                item["project"]["slug"] if item["project"] else "global",
+                f"v{item['version']}",
+                item["id"],
+            ]
+            for item in items
+        ]
+        _table("Credenciais", ["nome", "categoria", "escopo", "versão", "id"], rows)
+    finally:
+        session.close()
+
+
+@credential_app.command("show")
+def credential_show(
+    identifier: str = typer.Argument(..., help="Nome ou id da credencial"),
+    copy: bool = typer.Option(False, "--copy", help="Copiar a senha para o clipboard"),
+) -> None:
+    """Mostra os campos de uma credencial (revelação auditada)."""
+    settings = Settings.from_env()
+    session = _login(settings)
+    try:
+        item = _find_credential(session, identifier)
+        data = session.request(
+            "POST",
+            f"/v1/credentials/{item['id']}/reveal",
+            json={"passphrase": session.passphrase},
+        ).json()
+        if copy:
+            if not data.get("password"):
+                _fail("esta credencial não tem senha salva")
+            if not _copy_to_clipboard(data["password"]):
+                _fail("nenhum utilitário de clipboard encontrado (wl-copy/xclip/pbcopy)")
+            console.print("[green]Senha copiada para a área de transferência.[/green]")
+            return
+        rows = [
+            ["nome", data["name"]],
+            ["categoria", data["category"]],
+            ["escopo", data["project"]["slug"] if data.get("project") else "global"],
+            ["usuário", data.get("username") or "—"],
+            ["senha", data.get("password") or "—"],
+            ["url", data.get("url") or "—"],
+            ["notas", data.get("notes") or "—"],
+        ]
+        _table(f"Credencial · {data['name']}", ["campo", "valor"], rows)
+    finally:
+        session.close()
+
+
+@credential_app.command("update")
+def credential_update(
+    identifier: str = typer.Argument(..., help="Nome ou id da credencial"),
+    name: str | None = typer.Option(None, "--name"),
+    category: str | None = typer.Option(None, "--category", "-c"),
+    username: str | None = typer.Option(None, "--username", "-u"),
+    url: str | None = typer.Option(None, "--url"),
+    notes: str | None = typer.Option(None, "--notes", "-n"),
+    password: str | None = typer.Option(
+        None, "--password", help="Nova senha literal (evite o histórico do shell)"
+    ),
+    generate: bool = typer.Option(False, "--generate", help="Gerar uma nova senha forte"),
+    length: int = typer.Option(DEFAULT_LENGTH, "--length", help="Tamanho ao gerar"),
+    project: str | None = typer.Option(
+        None, "--project", "-p", help="Mover a credencial para este projeto"
+    ),
+    global_scope: bool = typer.Option(
+        False, "--global", help="Mover a credencial para o escopo global"
+    ),
+) -> None:
+    """Atualiza campos de uma credencial preservando os não informados."""
+    if project and global_scope:
+        _fail("use --project ou --global, não os dois")
+    settings = Settings.from_env()
+    session = _login(settings)
+    try:
+        item = _find_credential(session, identifier)
+        current = session.request(
+            "POST",
+            f"/v1/credentials/{item['id']}/reveal",
+            json={"passphrase": session.passphrase},
+        ).json()
+        new_password = current.get("password", "")
+        if generate:
+            new_password = generate_password(PasswordOptions(length=length))
+            console.print("[yellow]Nova senha gerada e salva.[/yellow]")
+        elif password is not None:
+            new_password = password
+        if project:
+            project_id = _find_project(session, project)["id"]
+        elif global_scope:
+            project_id = None
+        else:
+            project_id = current["project"]["id"] if current.get("project") else None
+        payload = {
+            "name": name if name is not None else current["name"],
+            "category": category if category is not None else current["category"],
+            "username": username if username is not None else current.get("username", ""),
+            "password": new_password,
+            "url": url if url is not None else current.get("url", ""),
+            "notes": notes if notes is not None else current.get("notes", ""),
+            "project_id": project_id,
+        }
+        updated = session.request("PUT", f"/v1/credentials/{item['id']}", json=payload).json()[
+            "item"
+        ]
+        scope = updated["project"]["slug"] if updated["project"] else "global"
+        console.print(
+            f"[green]Credencial atualizada:[/green] {updated['name']} "
+            f"({scope}, v{updated['version']})"
+        )
+    finally:
+        session.close()
+
+
+@credential_app.command("remove")
+def credential_remove(
+    identifier: str = typer.Argument(..., help="Nome ou id da credencial"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Não pedir confirmação"),
+) -> None:
+    """Remove uma credencial."""
+    settings = Settings.from_env()
+    session = _login(settings)
+    try:
+        item = _find_credential(session, identifier)
+        if not yes and not typer.confirm(
+            f"Remover a credencial {item['name']}? Esta ação é irreversível"
+        ):
+            raise typer.Exit(1)
+        session.request("DELETE", f"/v1/credentials/{item['id']}")
+        console.print(f"[yellow]Credencial removida:[/yellow] {item['name']}")
     finally:
         session.close()
 

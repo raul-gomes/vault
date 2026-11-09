@@ -45,6 +45,24 @@ class EnvironmentCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=40)
 
 
+class CredentialUpsertRequest(BaseModel):
+    """Create or replace one service credential (global or project-scoped)."""
+
+    name: str = Field(min_length=1, max_length=200)
+    category: str = Field(default="other", max_length=40)
+    username: str = Field(default="", max_length=500)
+    password: str = Field(default="", max_length=8192)
+    url: str = Field(default="", max_length=2000)
+    notes: str = Field(default="", max_length=65536)
+    project_id: str | None = Field(default=None, max_length=36)
+
+
+class CredentialRevealRequest(BaseModel):
+    """Re-authentication payload for revealing a credential."""
+
+    passphrase: str = Field(min_length=1, max_length=1024)
+
+
 class SecretUpsertRequest(BaseModel):
     """Create or replace one environment variable."""
 

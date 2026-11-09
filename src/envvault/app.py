@@ -13,11 +13,12 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from envvault import __version__, migrate
-from envvault.api import auth, exec, projects, secrets, system, tokens
+from envvault.api import auth, credentials, exec, projects, secrets, system, tokens
 from envvault.config import Settings
 from envvault.crypto import InvalidPassphrase
 from envvault.db import build_engine, build_session_factory, secure_database_files
 from envvault.runtime import LockedError, RateLimited, Runtime, VaultNotInitialized
+from envvault.services.credentials import CredentialCorruption
 from envvault.services.envfile import EnvFileTooLarge
 from envvault.services.projects import ProjectError
 from envvault.services.runner import ExecError
@@ -86,6 +87,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(projects.router)
+    app.include_router(credentials.router)
     app.include_router(secrets.router)
     app.include_router(exec.session_router)
     app.include_router(exec.agent_router)
@@ -142,6 +144,11 @@ def _register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(SecretCorruption)
     async def _corruption(_request: Request, exc: SecretCorruption) -> JSONResponse:
         logger.exception("secret decryption failure")
+        return JSONResponse(status_code=500, content={"detail": str(exc)})
+
+    @app.exception_handler(CredentialCorruption)
+    async def _credential_corruption(_request: Request, exc: CredentialCorruption) -> JSONResponse:
+        logger.exception("credential decryption failure")
         return JSONResponse(status_code=500, content={"detail": str(exc)})
 
     @app.exception_handler(ProjectError)

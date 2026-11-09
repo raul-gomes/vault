@@ -23,6 +23,7 @@ NONCE_LENGTH = 12
 SALT_LENGTH = 16
 DEK_AAD = b"envvault:dek:v1"
 SECRET_AAD_PREFIX = "envvault:secret:v1"
+CREDENTIAL_AAD_PREFIX = "envvault:credential:v1"
 
 
 class InvalidPassphrase(Exception):
@@ -80,6 +81,11 @@ def unwrap_data_key(kek: bytes, nonce: bytes, ciphertext: bytes) -> bytes:
 def secret_aad(project_id: str, environment: str, key: str, version: int) -> bytes:
     """Build the associated data that binds a ciphertext to its slot."""
     return f"{SECRET_AAD_PREFIX}:{project_id}:{environment}:{key}:{version}".encode()
+
+
+def credential_aad(credential_id: str, version: int) -> bytes:
+    """Bind a credential ciphertext to its row and version."""
+    return f"{CREDENTIAL_AAD_PREFIX}:{credential_id}:{version}".encode()
 
 
 def encrypt_secret(data_key: bytes, plaintext: str, aad: bytes) -> tuple[bytes, bytes]:

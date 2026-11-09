@@ -61,6 +61,9 @@ class Project(Base):
     environment_rows: Mapped[list[Environment]] = relationship(
         back_populates="project", cascade="all, delete-orphan", passive_deletes=True
     )
+    credentials: Mapped[list[Credential]] = relationship(
+        back_populates="project", cascade="all, delete-orphan", passive_deletes=True
+    )
 
 
 class Environment(Base):
@@ -103,6 +106,32 @@ class Secret(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
     project: Mapped[Project] = relationship(back_populates="secrets")
+
+
+class Credential(Base):
+    """A service credential (hosting, DNS, email…) global or per project.
+
+    ``project_id`` is null for shared/global credentials and set when the login
+    belongs to a specific client project. Name and category are searchable
+    metadata; the remaining fields live in an encrypted JSON payload so
+    usernames and notes never touch plaintext columns.
+    """
+
+    __tablename__ = "credentials"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    name: Mapped[str] = mapped_column(String(200), index=True)
+    category: Mapped[str] = mapped_column(String(40), index=True, default="other")
+    nonce: Mapped[bytes] = mapped_column(LargeBinary)
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+    project: Mapped[Project | None] = relationship(back_populates="credentials")
 
 
 class ApiToken(Base):

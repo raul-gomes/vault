@@ -303,6 +303,14 @@ envvault token list
 envvault token revoke claude
 envvault context
 
+# credenciais de serviços (globais ou por projeto)
+envvault credential add hostinger -c hosting -p meu-app
+envvault credential add cloudflare -c dns          # global
+envvault credential list [--project meu-app | --global]
+envvault credential show hostinger                # reveal auditado
+envvault credential update hostinger --username novo@exemplo.com
+envvault credential remove hostinger
+
 # auditoria e utilidades
 envvault audit --limit 50
 envvault verify
@@ -340,7 +348,52 @@ gerador no formulário de segredo.
 
 ---
 
-## 7. Variáveis de ambiente
+## 7. Credenciais de serviços
+
+Além das variáveis de `.env`, o cofre guarda **logins de serviços externos**
+(Hostinger, Cloudflare, Gmail, SMTP, painéis de API…). Cada credencial pode ser:
+
+- **global** — compartilhada por todos os projetos (ex.: sua conta pessoal de
+  Cloudflare);
+- **de projeto** — específica de um cliente/contexto (ex.: o painel da Hostinger
+  do cliente A).
+
+Nome, categoria e escopo ficam visíveis para busca. Usuário, senha, URL e notas
+são criptografados juntos em um único payload AES-256-GCM, com AAD amarrando o
+id e a versão da credencial. A versão é incrementada a cada edição.
+
+```bash
+# global
+envvault credential add cloudflare -c dns --username eu@exemplo.com
+# de um projeto
+envvault credential add hostinger -c hosting -p cliente-a --url https://hpanel.hostinger.com
+# listar por escopo
+envvault credential list
+envvault credential list --project cliente-a
+envvault credential list --global
+# ver (revalida a passphrase e audita)
+envvault credential show hostinger
+envvault credential show hostinger --copy
+# mover entre escopos ou trocar a senha
+envvault credential update hostinger -p cliente-b
+envvault credential update hostinger --global --generate
+```
+
+No dashboard, a área **Credenciais** permite criar, buscar, filtrar por projeto,
+revelar com passphrase e excluir. O botão **Credenciais** na página do projeto já
+abre a lista filtrada por aquele projeto.
+
+Regras de segurança:
+
+- tokens de agente **não têm acesso** a credenciais;
+- listagens nunca devolvem usuário, senha, URL ou notas;
+- o reveal exige a passphrase mestra e é registrado em `credential.reveal`;
+- excluir um projeto remove apenas as credenciais daquele projeto; as globais
+  continuam.
+
+---
+
+## 8. Variáveis de ambiente
 
 | Variável | Padrão | Efeito |
 |---|---|---|
@@ -356,11 +409,12 @@ gerador no formulário de segredo.
 
 ---
 
-## 8. Segurança
+## 9. Segurança
 
 **Protege contra:**
 - leitura do banco sem a passphrase;
 - vazamento acidental em logs/build/conversa (redação);
+- exposição de credenciais de serviços em listagens (só o reveal auditado as mostra);
 - adulteração silenciosa do log (cadeia de hash);
 - CSRF, DNS rebinding e uso do dashboard por outra origem;
 - sessão esquecida (bloqueio por inatividade).
@@ -383,7 +437,7 @@ gerador no formulário de segredo.
 
 ---
 
-## 9. Solução de problemas
+## 10. Solução de problemas
 
 | Mensagem / sintoma | Causa | Correção |
 |---|---|---|
@@ -405,23 +459,23 @@ gerador no formulário de segredo.
 
 ---
 
-## 10. Estrutura do código
+## 11. Estrutura do código
 
 ```
 src/envvault/
   api/          rotas FastAPI e dependências de autenticação
-  services/     vault, secrets, projects, tokens, audit, runner, redact, envfile
+  services/     vault, secrets, credentials, projects, tokens, audit, runner, redact, envfile
   migrations/   Alembic
   web/          dashboard estático (HTML/CSS/JS, sem build)
   cli.py        interface de linha de comando
   crypto.py     Argon2id + AES-256-GCM
   runtime.py    estado em memória (DEK, sessões, execuções)
-tests/          56 testes (pytest)
+tests/          testes (pytest)
 docs/adr/       decisões de arquitetura
 AGENTS.md       convenções e invariantes para agentes
 ```
 
-## 11. Desenvolvimento
+## 12. Desenvolvimento
 
 ```bash
 uv sync
@@ -430,6 +484,6 @@ uv run ruff check .
 uv run ruff format --check .
 ```
 
-## 12. Licença
+## 13. Licença
 
 MIT.

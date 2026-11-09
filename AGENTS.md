@@ -11,13 +11,14 @@ names and execute commands — never reveal values.
 
 ## Non-negotiable invariants
 
-1. **Plaintext never crosses the HTTP boundary.** Secret values may exist only:
-   in the daemon's memory, in the child process environment, and in the
-   `reveal`/`export` responses for the *human* session.
+1. **Plaintext never crosses the HTTP boundary.** Secret values and credential
+   fields may exist only: in the daemon's memory, in the child process
+   environment, and in the `reveal`/`export` responses for the *human* session.
 2. **The daemon spawns the process.** Never add a CLI path that decrypts locally
    or passes plaintext to an agent process.
-3. **Agent tokens cannot reveal/export** and cannot use session endpoints. The
-   two auth planes stay separate (`require_session` vs `require_agent`).
+3. **Agent tokens cannot reveal/export or access credentials** and cannot use
+   session endpoints. The two auth planes stay separate (`require_session` vs
+   `require_agent`).
 4. **Every mutation is audited.** New actions append an entry through
    `services/audit.append` and commit in the same transaction.
 5. **The audit log is append-only and hash-chained.** Do not update/delete rows.
@@ -41,6 +42,7 @@ names and execute commands — never reveal values.
 | `src/envvault/runtime.py` | In-memory DEK, sessions, login throttle, exec registry |
 | `src/envvault/services/vault.py` | init/unlock/lock, passphrase change, idle enforcement |
 | `src/envvault/services/secrets.py` | encrypted CRUD, reveal, import/export, exec material |
+| `src/envvault/services/credentials.py` | global/project service credentials, encrypted payload, audited reveal |
 | `src/envvault/services/runner.py` | spawn child, redact stream, kill process group |
 | `src/envvault/services/tokens.py` | token creation and scope authorization |
 | `src/envvault/services/audit.py` | append-only hash chain |
@@ -78,6 +80,11 @@ process group. `ENVVAULT_*` variables are stripped from the child env.
 - Environments are first-class rows in `environments` (unique per project) so an
   empty environment still shows in the UI. Creating a secret also registers its
   environment. Deleting an environment is only allowed when it has no secrets.
+- Credentials are global when `credentials.project_id` is null and scoped to one
+  project otherwise. Only `name`, `category` and the association are plaintext;
+  the other fields live in an encrypted JSON payload whose AAD binds
+  `credential_id/version`. Deleting a project cascades its credentials; globals
+  survive.
 
 ## Web UI rules
 

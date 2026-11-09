@@ -8,6 +8,8 @@ const state = {
   project: null,
   environment: null,
   secrets: [],
+  credentials: [],
+  credentialFilter: { query: "", category: "", project: "" },
   auditFilter: { project: "", action: "", limit: 100 },
   execAbort: null,
 };
@@ -374,7 +376,7 @@ async function route() {
   state.execAbort?.abort();
   const hash = location.hash.replace(/^#\/?/, "") || "overview";
   const [name, id] = hash.split("/");
-  const visible = ["overview", "projects", "tokens", "audit", "settings"].includes(name)
+  const visible = ["overview", "projects", "credentials", "tokens", "audit", "settings"].includes(name)
     ? name
     : "overview";
   setActiveNav(visible);
@@ -386,6 +388,8 @@ async function route() {
       await renderProject(id);
     } else if (name === "projects") {
       await renderProjects();
+    } else if (name === "credentials") {
+      await renderCredentials();
     } else if (name === "tokens") {
       await renderTokens();
     } else if (name === "audit") {
@@ -418,6 +422,7 @@ async function renderOverview() {
     metricCard("Projetos", data.projects, "diretórios registrados"),
     metricCard("Segredos", data.secrets, "valores criptografados"),
     metricCard("Ambientes", data.environments, "dev, prod, staging…"),
+    metricCard("Credenciais", data.credentials, "serviços externos"),
     metricCard("Tokens ativos", data.active_tokens, "acesso de agentes"),
   );
   const statusCard = el(
@@ -557,6 +562,10 @@ function renderProjectPage() {
   if (!envs.includes(state.environment)) envs.unshift(state.environment);
   const env = state.environment;
   setHeader(project.name, `${project.slug} · ${project.path}`, [
+    { label: "Credenciais", onClick: () => {
+        state.credentialFilter = { query: "", category: "", project: project.id };
+        location.hash = "#/credentials";
+      } },
     { label: "Editar", onClick: () => openProjectDialog(project) },
     { label: "Excluir", danger: true, onClick: () => openDeleteProject(project) },
     { label: "Atualizar", onClick: refreshProject },
@@ -1117,6 +1126,389 @@ async function copyText(text) {
   } catch {
     toast("Não foi possível copiar", "error");
   }
+}
+
+// ---------------------------------------------------------------------------
+// credentials
+// ---------------------------------------------------------------------------
+const CREDENTIAL_CATEGORIES = [
+  ["hosting", "Hospedagem"],
+  ["dns", "DNS / domínios"],
+  ["email", "E-mail"],
+  ["smtp", "SMTP / envio"],
+  ["api", "API / token"],
+  ["database", "Banco de dados"],
+  ["other", "Outra"],
+];
+
+function credentialCategoryLabel(value) {
+  const found = CREDENTIAL_CATEGORIES.find(([slug]) => slug === value);
+  return found ? found[1] : value;
+}
+
+async function renderCredentials() {
+  setHeader(
+    "Credenciais",
+    "Logins de serviços externos, globais ou por projeto (cliente). Os campos sensíveis só saem do cofre em reveal auditado.",
+    [
+      { label: "Atualizar", onClick: renderCredentials },
+      { label: "Nova credencial", primary: true, onClick: () => openCredentialDialog() },
+    ],
+  );
+  if (!state.projects.length) await loadProjects();
+  const filter = state.credentialFilter;
+  const query = el("input", {
+    value: filter.query,
+    placeholder: "buscar por nome ou categoria",
+    autocomplete: "off",
+  });
+  const category = el(
+    "select",
+    {},
+    el("option", { value: "" }, "todas as categorias"),
+    ...CREDENTIAL_CATEGORIES.map(([slug, label]) => el("option", { value: slug }, label)),
+  );
+  category.value = filter.category;
+  const project = el(
+    "select",
+    {},
+    el("option", { value: "" }, "todos os escopos"),
+    el("option", { value: "__global__" }, "somente globais"),
+    ...state.projects.map((item) =>
+      el("option", { value: item.id }, `projeto: ${item.slug}`),
+    ),
+  );
+  project.value = filter.project;
+  const apply = el("button", { class: "btn", type: "button" }, "Filtrar");
+  apply.addEventListener("click", () => {
+    state.credentialFilter = {
+      query: query.value.trim(),
+      category: category.value,
+      project: project.value,
+    };
+    renderCredentials();
+  });
+  query.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") apply.click();
+  });
+
+  const params = new URLSearchParams();
+  if (filter.query) params.set("query", filter.query);
+  if (filter.category) params.set("category", filter.category);
+  if (filter.project === "__global__") params.set("global_only", "true");
+  else if (filter.project) params.set("project_id", filter.project);
+  const data = await api(`/v1/credentials?${params.toString()}`);
+  state.credentials = data.items;
+
+  const rows = data.items.map((credential) => [
+    el("span", { class: "mono" }, credential.name),
+    el("span", { class: "tag" }, credentialCategoryLabel(credential.category)),
+    credential.project
+      ? el("span", { class: "tag" }, credential.project.slug)
+      : badge("global", "ok"),
+    el("span", { class: "tag" }, `v${credential.version}`),
+    fmtDate(credential.updated_at),
+    el(
+      "div",
+      { class: "row" },
+      el(
+        "button",
+        { class: "btn small", type: "button", onclick: () => openRevealCredential(credential) },
+        "Revelar",
+      ),
+      el(
+        "button",
+        { class: "btn small", type: "button", onclick: () => openCredentialDialog(credential) },
+        "Editar",
+      ),
+      el(
+        "button",
+        { class: "btn small danger", type: "button", onclick: () => openDeleteCredential(credential) },
+        "Excluir",
+      ),
+    ),
+  ]);
+
+  const content = data.items.length
+    ? table(["nome", "categoria", "escopo", "versão", "atualizado", ""], rows)
+    : emptyState(
+        "Nenhuma credencial ainda",
+        "Guarde logins de Hostinger, Cloudflare, Gmail, SMTP e outros serviços. Use o escopo global para o que é seu e o projeto para cada cliente.",
+        "Adicionar credencial",
+        () => openCredentialDialog(),
+      );
+
+  view().replaceChildren(
+    el(
+      "div",
+      { class: "card row" },
+      query,
+      category,
+      project,
+      apply,
+      el("div", { class: "spacer" }),
+      el("span", { class: "muted" }, `${data.total} credenciais`),
+    ),
+    content,
+    el(
+      "p",
+      { class: "note info" },
+      "Nome, categoria e escopo ficam visíveis para busca. Usuário, senha, URL e notas são criptografados juntos e nunca aparecem em listagens. Tokens de agente não têm acesso a esta área.",
+    ),
+  );
+}
+
+async function openCredentialDialog(credential = null) {
+  const editing = Boolean(credential);
+  if (!state.projects.length) await loadProjects();
+  let current = { username: "", password: "", url: "", notes: "" };
+  if (editing) {
+    const passphrase = await askPassphrase(
+      `Editar ${credential.name}`,
+      "Para editar os campos criptografados a passphrase é revalidada. O acesso fica na auditoria.",
+    );
+    if (!passphrase) return;
+    try {
+      current = await api(`/v1/credentials/${credential.id}/reveal`, {
+        method: "POST",
+        body: { passphrase },
+      });
+    } catch (error) {
+      toast(error.message, "error");
+      return;
+    }
+  }
+
+  const name = el("input", { value: credential?.name || "", placeholder: "Hostinger" });
+  const known = CREDENTIAL_CATEGORIES.some(([slug]) => slug === credential?.category);
+  const categoryOptions = [...CREDENTIAL_CATEGORIES];
+  if (credential?.category && !known) {
+    categoryOptions.push([credential.category, credential.category]);
+  }
+  const category = el(
+    "select",
+    {},
+    ...categoryOptions.map(([slug, label]) => el("option", { value: slug }, label)),
+  );
+  category.value = credential?.category || "hosting";
+  const project = el(
+    "select",
+    {},
+    el("option", { value: "" }, "Global (todos os projetos)"),
+    ...state.projects.map((item) =>
+      el("option", { value: item.id }, `Projeto: ${item.slug} — ${item.name}`),
+    ),
+  );
+  project.value = credential?.project?.id || "";
+  const username = el("input", {
+    value: current.username || "",
+    placeholder: "usuario@exemplo.com",
+    autocomplete: "off",
+  });
+  const password = el("input", {
+    type: "password",
+    value: current.password || "",
+    placeholder: "senha ou token",
+    autocomplete: "new-password",
+  });
+  const url = el("input", { value: current.url || "", placeholder: "https://painel.servico.com" });
+  const notes = el("textarea", { rows: "4", placeholder: "observações, escopo do token, etc." });
+  notes.value = current.notes || "";
+
+  const reveal = el("button", { class: "btn small", type: "button" }, "Mostrar");
+  reveal.addEventListener("click", () => {
+    const hidden = password.type === "password";
+    password.type = hidden ? "text" : "password";
+    reveal.textContent = hidden ? "Ocultar" : "Mostrar";
+  });
+
+  const length = el("input", {
+    type: "number",
+    min: "8",
+    max: "256",
+    value: "32",
+    style: "width:90px",
+  });
+  const entropy = el("span", { class: "muted" }, "");
+  const generate = el("button", { class: "btn small", type: "button" }, "Gerar senha");
+  generate.addEventListener("click", async () => {
+    generate.disabled = true;
+    try {
+      const data = await api("/v1/generate", {
+        method: "POST",
+        body: { length: Number(length.value) },
+      });
+      password.type = "text";
+      reveal.textContent = "Ocultar";
+      password.value = data.password;
+      entropy.textContent = `~${data.entropy_bits} bits · ${data.alphabet_size} símbolos`;
+    } catch (error) {
+      toast(error.message, "error");
+    } finally {
+      generate.disabled = false;
+    }
+  });
+
+  const body = el(
+    "div",
+    { class: "stack" },
+    el(
+      "div",
+      { class: "grid", style: "grid-template-columns: 1.4fr 1fr" },
+      el("div", { class: "field" }, el("label", {}, "Nome"), name),
+      el("div", { class: "field" }, el("label", {}, "Categoria"), category),
+    ),
+    el(
+      "div",
+      { class: "field" },
+      el("label", {}, "Escopo"),
+      project,
+      el(
+        "p",
+        { class: "muted" },
+        "Global = compartilhada por todos os projetos. Projeto = específica de um cliente.",
+      ),
+    ),
+    el(
+      "div",
+      { class: "grid", style: "grid-template-columns: 1fr 1fr" },
+      el("div", { class: "field" }, el("label", {}, "Usuário / e-mail"), username),
+      el("div", { class: "field" }, el("label", {}, "URL do painel"), url),
+    ),
+    el(
+      "div",
+      { class: "field" },
+      el("label", {}, "Senha / token"),
+      el("div", { class: "row" }, password, reveal),
+    ),
+    el(
+      "div",
+      { class: "card stack", style: "padding:12px;background:var(--panel-2)" },
+      el(
+        "div",
+        { class: "row" },
+        el("strong", {}, "Gerador embutido"),
+        el("label", { class: "field-inline" }, "Tamanho", length),
+        generate,
+        entropy,
+      ),
+    ),
+    el("div", { class: "field" }, el("label", {}, "Notas"), notes),
+    el(
+      "p",
+      { class: "note info" },
+      "Usuário, senha, URL e notas são criptografados em um único payload AES-256-GCM. Apenas nome e categoria ficam visíveis.",
+    ),
+  );
+
+  openModal({
+    title: editing ? `Editar credencial · ${credential.name}` : "Nova credencial",
+    body,
+    submitLabel: editing ? "Salvar" : "Criar",
+    onSubmit: async () => {
+      if (!name.value.trim()) {
+        toast("Informe um nome", "error");
+        return false;
+      }
+      const payload = {
+        name: name.value.trim(),
+        category: category.value,
+        username: username.value,
+        password: password.value,
+        url: url.value.trim(),
+        notes: notes.value,
+        project_id: project.value || null,
+      };
+      if (editing) {
+        await api(`/v1/credentials/${credential.id}`, { method: "PUT", body: payload });
+        toast("Credencial atualizada");
+      } else {
+        await api("/v1/credentials", { method: "POST", body: payload });
+        toast("Credencial criada");
+      }
+      await renderCredentials();
+      return true;
+    },
+  });
+}
+
+async function openRevealCredential(credential) {
+  const passphrase = await askPassphrase(
+    `Revelar ${credential.name}`,
+    "A passphrase é revalidada e o acesso fica registrado na auditoria.",
+  );
+  if (!passphrase) return;
+  try {
+    const data = await api(`/v1/credentials/${credential.id}/reveal`, {
+      method: "POST",
+      body: { passphrase },
+    });
+    const password = el("div", { class: "code-block" }, data.password || "(sem senha salva)");
+    const copy = el("button", { class: "btn small", type: "button" }, "Copiar senha");
+    copy.disabled = !data.password;
+    copy.addEventListener("click", () => copyText(data.password));
+    const timerLabel = el("span", { class: "muted" }, "oculta em 60s");
+    const timer = setTimeout(() => {
+      password.textContent = "•••••••• (senha ocultada)";
+      copy.disabled = true;
+      timerLabel.textContent = "senha ocultada";
+    }, 60000);
+    dialog().addEventListener("close", () => clearTimeout(timer), { once: true });
+
+    const details = el(
+      "dl",
+      { class: "kv" },
+      el("dt", {}, "Escopo"),
+      el("dd", {}, data.project ? `projeto ${data.project.slug}` : "global"),
+      el("dt", {}, "Categoria"),
+      el("dd", {}, credentialCategoryLabel(data.category)),
+      el("dt", {}, "Usuário"),
+      el("dd", {}, data.username || "—"),
+      el("dt", {}, "URL"),
+      el("dd", {}, data.url || "—"),
+      el("dt", {}, "Notas"),
+      el("dd", {}, data.notes || "—"),
+    );
+
+    openModal({
+      title: `${data.name} · v${data.version}`,
+      body: el(
+        "div",
+        { class: "stack" },
+        el(
+          "p",
+          { class: "note" },
+          "Não cole estes valores em conversas, issues ou logs. Se aparecerem em algum lugar, rotacione.",
+        ),
+        details,
+        el("div", { class: "field" }, el("label", {}, "Senha / token"), password),
+        el("div", { class: "row" }, copy, timerLabel),
+      ),
+      submitLabel: "Fechar",
+      hideCancel: true,
+    });
+  } catch (error) {
+    toast(error.message, "error");
+  }
+}
+
+function openDeleteCredential(credential) {
+  openModal({
+    title: "Excluir credencial",
+    danger: true,
+    submitLabel: "Excluir",
+    body: el(
+      "p",
+      {},
+      `Remover ${credential.name} (${credentialCategoryLabel(credential.category)})? Esta ação não pode ser desfeita.`,
+    ),
+    onSubmit: async () => {
+      await api(`/v1/credentials/${credential.id}`, { method: "DELETE" });
+      toast("Credencial excluída");
+      await renderCredentials();
+      return true;
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------

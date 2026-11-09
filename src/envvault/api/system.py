@@ -17,6 +17,7 @@ from envvault.passwords import PasswordOptions, entropy_bits, generate_password
 from envvault.runtime import Runtime
 from envvault.schemas import GenerateRequest, SettingsRequest
 from envvault.services import audit, vault
+from envvault.services import credentials as credential_service
 from envvault.services import secrets as secret_service
 from envvault.services import tokens as token_service
 from envvault.services.vault import META_LOCK_TIMEOUT, get_meta, set_meta
@@ -37,6 +38,7 @@ def overview(
     return {
         "projects": int(project_total),
         **secret_service.counts(db),
+        **credential_service.counts(db),
         "active_tokens": sum(1 for token in token_items if token.revoked_at is None),
         "recent_audit": [audit_payload(entry) for entry in recent],
         "status": status_payload(vault.status(db, settings, state)),
