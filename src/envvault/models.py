@@ -58,6 +58,30 @@ class Project(Base):
     tokens: Mapped[list[ApiToken]] = relationship(
         back_populates="project", cascade="all, delete-orphan", passive_deletes=True
     )
+    environment_rows: Mapped[list[Environment]] = relationship(
+        back_populates="project", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class Environment(Base):
+    """A named environment (dev, staging, prod) that exists even while empty.
+
+    Environments used to be inferred from the secrets table, so an environment
+    without secrets could not be shown or selected. This table makes them
+    first-class.
+    """
+
+    __tablename__ = "environments"
+    __table_args__ = (UniqueConstraint("project_id", "name"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+    project: Mapped[Project] = relationship(back_populates="environment_rows")
 
 
 class Secret(Base):

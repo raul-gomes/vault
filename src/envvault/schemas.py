@@ -39,6 +39,12 @@ class ProjectDeleteRequest(BaseModel):
     confirm_slug: str = Field(min_length=1, max_length=64)
 
 
+class EnvironmentCreateRequest(BaseModel):
+    """Create an environment name, even before it has secrets."""
+
+    name: str = Field(min_length=1, max_length=40)
+
+
 class SecretUpsertRequest(BaseModel):
     """Create or replace one environment variable."""
 

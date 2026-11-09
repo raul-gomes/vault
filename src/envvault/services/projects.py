@@ -8,7 +8,7 @@ from pathlib import Path
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from envvault.models import Project, Secret
+from envvault.models import Environment, Project, Secret
 from envvault.runtime import Runtime
 from envvault.services import audit
 
@@ -143,7 +143,11 @@ def delete(
 
 
 def environments(db: Session, project: Project) -> list[dict[str, object]]:
-    """Return environment names with secret counts and last update time."""
+    """Return every named environment with secret counts and last update.
+
+    Environments come from both the registry (so empty ones persist) and the
+    secrets table (defensive, for rows written before the registry existed).
+    """
     rows = db.execute(
         select(
             Secret.environment,
@@ -152,9 +156,101 @@ def environments(db: Session, project: Project) -> list[dict[str, object]]:
         )
         .where(Secret.project_id == project.id)
         .group_by(Secret.environment)
-        .order_by(Secret.environment)
     ).all()
-    return [
-        {"environment": environment, "count": count, "updated_at": updated}
-        for environment, count, updated in rows
-    ]
+    counts = {environment: (int(count), updated) for environment, count, updated in rows}
+    registered = set(
+        db.scalars(select(Environment.name).where(Environment.project_id == project.id)).all()
+    )
+    result: list[dict[str, object]] = []
+    for name in sorted(registered | set(counts)):
+        count, updated = counts.get(name, (0, None))
+        result.append(
+            {
+                "environment": name,
+                "count": count,
+                "updated_at": updated,
+            }
+        )
+    return result
+
+
+def ensure_environment(db: Session, project: Project, name: str) -> Environment:
+    """Register an environment name, returning the existing row if present."""
+    name = validate_environment(name)
+    existing = db.scalars(
+        select(Environment).where(Environment.project_id == project.id, Environment.name == name)
+    ).first()
+    if existing is not None:
+        return existing
+    environment = Environment(project_id=project.id, name=name)
+    db.add(environment)
+    db.flush()
+    return environment
+
+
+def create_environment(
+    db: Session,
+    state: Runtime,
+    project: Project,
+    name: str,
+    *,
+    actor_type: str = "user",
+    actor_name: str = "user",
+) -> tuple[Environment, bool]:
+    """Register an environment and audit the action. Returns ``(row, created)``."""
+    name = validate_environment(name)
+    existing = db.scalars(
+        select(Environment).where(Environment.project_id == project.id, Environment.name == name)
+    ).first()
+    if existing is not None:
+        return existing, False
+    row = Environment(project_id=project.id, name=name)
+    db.add(row)
+    db.flush()
+    audit.append(
+        db,
+        actor_type=actor_type,
+        actor_name=actor_name,
+        action="environment.create",
+        project_slug=project.slug,
+        environment=name,
+        lock=state.lock,
+    )
+    db.commit()
+    return row, True
+
+
+def delete_environment(
+    db: Session,
+    state: Runtime,
+    project: Project,
+    name: str,
+    *,
+    actor_type: str = "user",
+    actor_name: str = "user",
+) -> None:
+    """Remove an empty environment; refuse if it still has secrets."""
+    name = validate_environment(name)
+    has_secrets = db.scalars(
+        select(Secret.id)
+        .where(Secret.project_id == project.id, Secret.environment == name)
+        .limit(1)
+    ).first()
+    if has_secrets is not None:
+        raise ProjectError("environment still has secrets; delete them first")
+    row = db.scalars(
+        select(Environment).where(Environment.project_id == project.id, Environment.name == name)
+    ).first()
+    if row is None:
+        raise ProjectError(f"environment not found: {name}")
+    db.delete(row)
+    audit.append(
+        db,
+        actor_type=actor_type,
+        actor_name=actor_name,
+        action="environment.delete",
+        project_slug=project.slug,
+        environment=name,
+        lock=state.lock,
+    )
+    db.commit()

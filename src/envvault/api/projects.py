@@ -4,14 +4,19 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from envvault.api.deps import get_db, get_runtime, project_or_404, require_session
 from envvault.api.serializers import project_payload
 from envvault.models import Project
 from envvault.runtime import Runtime
-from envvault.schemas import ProjectCreateRequest, ProjectDeleteRequest, ProjectUpdateRequest
+from envvault.schemas import (
+    EnvironmentCreateRequest,
+    ProjectCreateRequest,
+    ProjectDeleteRequest,
+    ProjectUpdateRequest,
+)
 from envvault.services import projects as project_service
 
 router = APIRouter(tags=["projects"], dependencies=[Depends(require_session)])
@@ -81,6 +86,37 @@ def list_environments(
     """Return environments for the project with counts."""
     project = project_or_404(db, project_id)
     return {"items": project_service.environments(db, project)}
+
+
+@router.post("/v1/projects/{project_id}/environments", status_code=status.HTTP_201_CREATED)
+def create_environment(
+    project_id: str,
+    payload: EnvironmentCreateRequest,
+    response: Response,
+    db: Annotated[Session, Depends(get_db)],
+    state: Annotated[Runtime, Depends(get_runtime)],
+) -> dict[str, object]:
+    """Create an empty environment so it persists in the dashboard."""
+    project = project_or_404(db, project_id)
+    row, created = project_service.create_environment(db, state, project, payload.name)
+    if not created:
+        response.status_code = status.HTTP_200_OK
+    return {"environment": row.name, "created": created}
+
+
+@router.delete(
+    "/v1/projects/{project_id}/environments/{name}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_environment(
+    project_id: str,
+    name: str,
+    db: Annotated[Session, Depends(get_db)],
+    state: Annotated[Runtime, Depends(get_runtime)],
+) -> None:
+    """Remove an environment only when it has no secrets left."""
+    project = project_or_404(db, project_id)
+    project_service.delete_environment(db, state, project, name)
 
 
 __all__ = ["Project", "router"]

@@ -189,3 +189,46 @@ def test_settings_timeout_update(auth: ApiClient) -> None:
     assert response.status_code == 200
     assert response.json()["lock_timeout_minutes"] == 45
     assert auth.get("/v1/settings").json()["lock_timeout_minutes"] == 45
+
+
+def test_create_empty_environment_persists(auth: ApiClient, project: dict) -> None:
+    created = auth.post(f"/v1/projects/{project['id']}/environments", json={"name": "staging"})
+    assert created.status_code == 201
+    assert created.json() == {"environment": "staging", "created": True}
+
+    again = auth.post(f"/v1/projects/{project['id']}/environments", json={"name": "staging"})
+    assert again.status_code == 200
+    assert again.json()["created"] is False
+
+    payload = auth.get(f"/v1/projects/{project['id']}").json()
+    by_name = {item["environment"]: item for item in payload["environments"]}
+    assert set(by_name) == {"staging"}
+    assert by_name["staging"]["count"] == 0
+
+
+def test_invalid_environment_name_is_rejected(auth: ApiClient, project: dict) -> None:
+    response = auth.post(f"/v1/projects/{project['id']}/environments", json={"name": "Not Valid!"})
+    assert response.status_code == 400
+
+
+def test_import_registers_environment(auth: ApiClient, project: dict) -> None:
+    auth.post(
+        f"/v1/projects/{project['id']}/import",
+        json={"environment": "qa", "content": "QA_KEY=value-qa\n", "replace": False},
+    )
+    payload = auth.get(f"/v1/projects/{project['id']}").json()
+    by_name = {item["environment"]: item for item in payload["environments"]}
+    assert by_name["qa"]["count"] == 1
+
+
+def test_delete_environment_requires_it_to_be_empty(
+    auth: ApiClient, project: dict, secret: dict
+) -> None:
+    in_use = auth.delete(f"/v1/projects/{project['id']}/environments/dev")
+    assert in_use.status_code == 400
+
+    auth.post(f"/v1/projects/{project['id']}/environments", json={"name": "staging"})
+    removed = auth.delete(f"/v1/projects/{project['id']}/environments/staging")
+    assert removed.status_code == 204
+    payload = auth.get(f"/v1/projects/{project['id']}").json()
+    assert "staging" not in [item["environment"] for item in payload["environments"]]

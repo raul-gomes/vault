@@ -581,8 +581,18 @@ function renderProjectPage() {
         onclick: async () => {
           const name = await promptText("Novo ambiente", "Nome curto, ex.: staging", "staging");
           if (!name) return;
-          state.environment = name.trim().toLowerCase();
-          await refreshProject();
+          const normalized = name.trim().toLowerCase();
+          try {
+            await api(`/v1/projects/${project.id}/environments`, {
+              method: "POST",
+              body: { name: normalized },
+            });
+            state.environment = normalized;
+            await refreshProject();
+            toast(`Ambiente ${normalized} pronto.`);
+          } catch (error) {
+            toast(error.message, "error");
+          }
         },
       },
       "+ ambiente",

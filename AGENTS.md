@@ -75,6 +75,9 @@ process group. `ENVVAULT_*` variables are stripped from the child env.
   Never edit a released revision.
 - Secret AAD binds `project_id/environment/key/version`; increment `version` on
   every write so old ciphertext cannot be swapped in.
+- Environments are first-class rows in `environments` (unique per project) so an
+  empty environment still shows in the UI. Creating a secret also registers its
+  environment. Deleting an environment is only allowed when it has no secrets.
 
 ## Web UI rules
 

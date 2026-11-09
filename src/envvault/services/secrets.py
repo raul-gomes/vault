@@ -12,7 +12,7 @@ from envvault import crypto
 from envvault.models import Project, Secret
 from envvault.runtime import LockedError, Runtime
 from envvault.services import audit, envfile, vault
-from envvault.services.projects import validate_environment
+from envvault.services.projects import ensure_environment, validate_environment
 
 KEY_MAX_LENGTH = 120
 VALUE_MAX_BYTES = 64 * 1024
@@ -113,6 +113,7 @@ def upsert(
     key = _validate_key(key)
     value = _validate_value(value)
     dek = _dek(state)
+    ensure_environment(db, project, environment)
     existing = get(db, project, environment, key)
     created = existing is None
     version = 1 if existing is None else existing.version + 1
@@ -240,6 +241,7 @@ def import_values(
     if not values:
         raise SecretError("no valid keys found in .env")
     dek = _dek(state)
+    ensure_environment(db, project, environment)
     created = updated = skipped = 0
     names: list[str] = []
     for key, value in values.items():
