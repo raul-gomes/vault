@@ -1,295 +1,411 @@
 # EnvVault
 
-Cofre local e criptografado para os `.env` dos seus projetos. O objetivo: um
-agente (Claude, scripts, CI local) usa os segredos **sem vê-los**. O daemon
-injeta as variáveis em um processo filho e **redige os valores da saída** antes
-de devolver qualquer coisa ao agente. Você continua dono de tudo: criação,
-leitura, export, tokens e auditoria.
-
-- Banco SQLite local em `~/.envvault/vault.db`
-- AES-256-GCM para cada segredo; chave de dados (DEK) aleatória embrulhada por
-  uma chave derivada da passphrase com **Argon2id**
-- Chave de dados só em memória; o cofre bloqueia por inatividade
-- Dois planos de acesso: sessão humana (pode revelar/exportar) e token de
-  agente (só lista nomes de chaves e executa)
-- Log de auditoria append-only, encadeado por hash
-- Gerador de senhas embutido (CLI + UI)
-- Interface web local sem dependências de front-end
+Cofre local e criptografado para os `.env` dos seus projetos. A ideia central:
+um agente (Claude, scripts, CI local) **usa** os segredos sem **vê-los**. Quem
+descriptografa e injeta é o daemon do cofre; a saída volta redigida.
 
 > **Não há recuperação de passphrase.** Se você perdê-la, os segredos são
-> irrecuperáveis. Faça backup do diretório `~/.envvault` (o backup continua
-> inútil sem a passphrase) e guarde a passphrase em um gerenciador de senhas.
+> irrecuperáveis. Guarde-a num gerenciador de senhas e faça backup de
+> `~/.envvault` (o backup sem a passphrase não serve para nada).
 
 ---
 
-## Requisitos
+## 1. O que é e o que não é
 
-- Python 3.12+
+**É:**
+- Um cofre único, local, em SQLite, que gerencia os segredos de vários projetos.
+- Um broker de execução: recebe um comando, injeta as variáveis e devolve a
+  saída **redigida**.
+- Um painel web local (loopback) para você gerenciar tudo.
+- Um log de auditoria append-only, encadeado por hash.
+
+**Não é:**
+- Um `.env` dentro de cada projeto. Os projetos não guardam segredos.
+- Um gerenciador de segredos na nuvem.
+- Uma sandbox contra comando malicioso (veja [limitações](#8-segurança)).
+
+---
+
+## 2. Como funciona
+
+### 2.1 Visão geral
+
+```
+┌──────────────────────┐        ┌────────────────────────────────────┐
+│  você (navegador)    │        │  daemon do EnvVault                │
+│  ou CLI              │──────▶ │  127.0.0.1:8787                    │
+└──────────────────────┘        │                                    │
+                                │  ~/.envvault/vault.db (cripto)     │
+┌──────────────────────┐        │  chave de dados (DEK) só na memória│
+│  agente (token ev_…) │──────▶ │                                    │
+└──────────────────────┘        └───────────────┬────────────────────┘
+                                                │ descriptografa
+                                                ▼
+                                   ┌──────────────────────────┐
+                                   │ processo filho           │
+                                   │ env com os segredos      │
+                                   └────────────┬─────────────┘
+                                                │ stdout/stderr
+                                                ▼
+                                   redator → SSE redigido → cliente
+```
+
+O ponto crítico: **o daemon inicia o processo**. O valor em claro nunca é
+serializado em uma resposta HTTP. Ele existe só na memória do daemon e no
+ambiente do processo filho.
+
+### 2.2 O cofre é global; os projetos são registros
+
+```
+~/.envvault/                 ← um cofre para tudo
+  vault.db                   ← banco criptografado
+  daemon.log
+  daemon.pid
+
+~/projetos/app-a/            ← projeto registrado
+  .envvault.toml             ← ponteiro, sem segredo
+  src/...
+
+~/projetos/app-b/            ← outro projeto, mesmo cofre
+  .envvault.toml
+```
+
+- `envvault init` cria o cofre **uma vez**.
+- `envvault project add app-a --path ~/projetos/app-a` apenas grava slug +
+  caminho no banco. Nada é copiado para o projeto.
+- `.envvault.toml` é opcional e versionável: diz apenas qual projeto/ambiente
+  usar quando você está naquele diretório.
+- O isolamento é lógico: cada segredo pertence a `projeto + ambiente + chave`,
+  e cada token de agente é preso a um projeto e a ambientes específicos.
+
+### 2.3 Criptografia
+
+- A passphrase mestra deriva uma **KEK** com **Argon2id** (salt aleatório,
+  custo configurável).
+- A KEK embrulha (AES-256-GCM) uma **DEK** aleatória, que é a chave que
+  realmente cifra os segredos.
+- Cada segredo é cifrado com AES-256-GCM e **AAD** ligado a
+  `project_id/environment/key/version`. Isso impede trocar ciphertext entre
+  projetos/ambientes/chaves ou voltar para uma versão antiga.
+- A DEK fica **só na memória**. Trocar a passphrase re-embrulha a DEK; os
+  segredos não são re-criptografados.
+- Arquivos do cofre: `0600`; diretório: `0700`.
+
+### 2.4 Dois planos de acesso
+
+| | Sessão humana (você) | Token de agente |
+|---|---|---|
+| Como autentica | passphrase → cookie + CSRF | `Authorization: Bearer ev_…` |
+| Lista nomes de chaves | sim | sim, se `can_list` |
+| Executa com injeção | sim | sim, se `can_inject` |
+| Revela valor | **sim**, revalidando a passphrase | **nunca** |
+| Exporta `.env` | **sim**, revalidando a passphrase | **nunca** |
+| Gerencia tokens/projetos | sim | não |
+
+### 2.5 Redação da saída
+
+O daemon substitui ocorrências dos valores por `[REDACTED:CHAVE]`, incluindo:
+
+- valor cru;
+- URL-encoded e `quote_plus`;
+- base64 padrão e URL-safe.
+
+Valores com menos de 6 caracteres não são redigidos (para não transformar
+`8080` ou `true` em ruído).
+
+### 2.6 Bloqueio e auditoria
+
+- Após `N` minutos sem atividade, a DEK sai da memória, as sessões caem e os
+  processos em execução são encerrados.
+- Toda ação relevante grava um evento. Cada evento contém o hash do anterior;
+  `envvault verify` recomputa a cadeia e detecta adulteração.
+
+---
+
+## 3. Como colocar para funcionar
+
+### 3.1 Requisitos
+
+- Python **3.12+**
 - [`uv`](https://docs.astral.sh/uv/)
-- Linux/macOS (o runner usa grupos de processo POSIX)
+- Linux ou macOS (o runner usa grupos de processo POSIX)
 
-## Instalação
+### 3.2 Instalação
 
 ```bash
-git clone <este-repo> envvault
-cd envvault
+cd /caminho/para/envvault
 uv sync
 ```
 
-O executável fica disponível como `uv run envvault` dentro do projeto, ou
-`~/.local/bin/envvault` após `uv tool install .`. O restante deste documento usa
-`envvault` como atalho.
+Isso cria o `.venv` e instala as dependências. Os comandos abaixo usam
+`uv run envvault` de dentro do repositório.
 
-## Início rápido
+Para usar de qualquer diretório, instale o binário uma vez:
 
 ```bash
-# 1. Cria o cofre (pede a passphrase mestra) e sobe o daemon
-envvault init
+uv tool install /caminho/para/envvault
+# agora: envvault <comando>
+```
 
-# 2. Registra um projeto local
+### 3.3 Passo 1 — criar o cofre
+
+```bash
+uv run envvault init
+```
+
+- Pede a passphrase mestra (mínimo 10 caracteres) com confirmação.
+- Cria `~/.envvault/vault.db`.
+- Sobe o daemon em segundo plano em `http://127.0.0.1:8787`.
+
+Confira:
+
+```bash
+uv run envvault status
+```
+
+### 3.4 Passo 2 — registrar um projeto
+
+```bash
 cd ~/projetos/meu-app
-envvault project add meu-app --name "Meu App" --path .
-
-# 3. Vincula o diretório ao projeto (cria .envvault.toml, sem segredos)
-envvault link --project meu-app --environment dev
-
-# 4. Importa o .env existente e (opcionalmente) apaga o arquivo
-envvault import .env --delete-file
-
-# 5. A partir daqui o cofre é a fonte da verdade
-envvault list
-envvault run -- npm run dev
+uv run --project /caminho/para/envvault envvault project add meu-app --path .
 ```
 
-O dashboard fica em <http://127.0.0.1:8787>. Ele escuta apenas em loopback.
+O caminho precisa existir. O comando pede a passphrase (a CLI não mantém sessão
+entre execuções).
 
-## Comandos
-
-### Ciclo de vida
-
-| Comando | O que faz |
-| --- | --- |
-| `envvault init` | Cria o cofre, grava KDF/DEK e sobe o daemon |
-| `envvault serve` | Roda o daemon em primeiro plano |
-| `envvault stop` | Para o daemon em segundo plano |
-| `envvault status` | Mostra daemon, estado do cofre e timeout |
-| `envvault unlock` | Desbloqueia em memória por uma sessão curta |
-| `envvault lock` | Descarta a chave, encerra sessões e mata execuções |
-| `envvault passwd` | Troca a passphrase (re-embrulha a DEK) |
-
-### Projetos e segredos
-
-| Comando | O que faz |
-| --- | --- |
-| `envvault project add <slug> --path .` | Registra um diretório |
-| `envvault project list` | Lista projetos e contagens |
-| `envvault project remove <slug>` | Remove projeto, segredos e tokens |
-| `envvault link --project <slug> -e dev` | Cria `.envvault.toml` |
-| `envvault set KEY [--generate]` | Cria/substitui um segredo |
-| `envvault list` | Lista nomes e versões (nunca valores) |
-| `envvault remove KEY` | Remove um segredo |
-| `envvault reveal KEY [--copy]` | Mostra o valor (revalida passphrase, audita) |
-| `envvault import .env [--replace] [--delete-file]` | Importa um dotenv |
-| `envvault export [--out FILE]` | Gera um `.env` temporário (auditado) |
-
-### Execução
-
-| Comando | O que faz |
-| --- | --- |
-| `envvault run -- <argv...>` | Executa com os segredos injetados |
-
-`run` usa a sessão humana quando `ENVVAULT_TOKEN` não está definido; com o
-token definido, usa o plano de agente. O comando **não** passa por um shell:
-cada argumento é preservado.
+### 3.5 Passo 3 — vincular o diretório (opcional, recomendado)
 
 ```bash
-envvault run -- python manage.py migrate
-envvault run --cwd sub/dir -- npm test
+cd ~/projetos/meu-app
+uv run --project /caminho/para/envvault envvault link --project meu-app -e dev
 ```
 
-### Tokens de agente
-
-| Comando | O que faz |
-| --- | --- |
-| `envvault token create --name claude --project app -e dev` | Cria um token (mostrado uma vez) |
-| `envvault token list` | Lista tokens e escopos |
-| `envvault token revoke <nome>` | Revoga imediatamente |
-| `envvault context` | Mostra o escopo do `ENVVAULT_TOKEN` atual |
-
-Restrinja sempre que possível:
-
-```bash
-envvault token create \
-  --name claude-app \
-  --project meu-app \
-  --environment dev \
-  --allow "npm run" \
-  --allow "pytest"
-```
-
-Sem `--allow`, o token aceita qualquer argv. Isso é conveniente, mas um comando
-arbitrário pode imprimir o ambiente inteiro — a redação é a última linha de
-defesa, não uma sandbox.
-
-### Gerador de senhas
-
-```bash
-envvault generate                      # 32 caracteres
-envvault generate -l 48 --count 5      # cinco senhas
-envvault generate --no-symbols --json  # saída para scripts
-envvault set API_KEY --generate        # gera e grava direto
-```
-
-Usa o CSPRNG do sistema, remove caracteres ambíguos (`I`, `l`, `1`, `O`, `0`) e
-garante ao menos um caractere de cada conjunto selecionado.
-
-### Auditoria
-
-```bash
-envvault audit --limit 50
-envvault verify          # recomputa a cadeia de hashes
-```
-
-## `.envvault.toml`
-
-Arquivo versionável (sem segredos) que define o alvo padrão:
+Cria `.envvault.toml`:
 
 ```toml
 project = "meu-app"
 environment = "dev"
 ```
 
-A CLI procura esse arquivo no diretório atual e nos pais. Assim `envvault run`,
-`list`, `set`, etc. funcionam sem `--project`/`--environment`.
+A partir daí, dentro desse diretório, você pode omitir `--project` e
+`--environment`.
 
-## Usando com o Claude
+### 3.6 Passo 4 — trazer os segredos
 
-1. Crie um token restrito ao projeto e ambiente.
-2. Exporte no ambiente do agente:
-
-   ```bash
-   export ENVVAULT_TOKEN=ev_...
-   ```
-
-3. Peça ao agente para usar a CLI:
-
-   ```bash
-   envvault context                    # escopo visível ao agente
-   envvault run -- pytest -q
-   ```
-
-O agente **não** tem endpoint para revelar valores. A API dele só expõe:
-
-- `GET /v1/agent/context` — escopo do token
-- `GET /v1/agent/keys?environment=dev` — nomes de chaves (sem valores)
-- `POST /v1/agent/exec` — executa argv com injeção; retorna SSE redigido
-
-Fluxo de segurança:
-
-```
-agente -> POST /v1/agent/exec -> daemon (descriptografa)
-                                     |
-                                     v
-                              processo filho (recebe env)
-                                     |
-                          stdout/stderr -> redator -> SSE -> agente
-```
-
-O valor em claro nunca é serializado em uma resposta HTTP. Ele existe apenas na
-memória do daemon e no ambiente do processo filho.
-
-### Exemplo de prompt para o agente
-
-> Use `envvault run -- <comando>` para rodar qualquer coisa que precise de
-> variáveis de ambiente. Nunca tente imprimir segredos; a saída é redigida e o
-> token não tem permissão de reveal.
-
-## Variáveis de ambiente
-
-| Variável | Padrão | Efeito |
-| --- | --- | --- |
-| `ENVVAULT_HOME` | `~/.envvault` | Diretório do banco, log e PID |
-| `ENVVAULT_HOST` | `127.0.0.1` | Endereço de bind do daemon |
-| `ENVVAULT_PORT` | `8787` | Porta do daemon |
-| `ENVVAULT_LOCK_TIMEOUT_MINUTES` | `30` | Bloqueio por inatividade |
-| `ENVVAULT_SESSION_IDLE_MINUTES` | `30` | Validade da sessão web/CLI |
-| `ENVVAULT_MAX_EXECS` | `8` | Execuções simultâneas |
-| `ENVVAULT_KDF_TIME_COST` | `3` | Custo do Argon2id |
-| `ENVVAULT_KDF_MEMORY_KIB` | `65536` | Memória do Argon2id (KiB) |
-| `ENVVAULT_KDF_PARALLELISM` | `4` | Paralelismo do Argon2id |
-
-## Modelo de ameaça
-
-Protege contra:
-
-- Leitura casual do banco (`vault.db`) sem a passphrase
-- Vazamento acidental de valores em logs, saída de build e conversas com o
-  agente (redação de valor cru, URL-encoded, `quote_plus` e base64)
-- Alteração silenciosa do log (cadeia de hash)
-- CSRF, DNS rebinding e uso do dashboard por outra origem (`Host`/`Origin`
-  guard, cookie `SameSite=Strict`, CSRF header)
-- Sessões esquecidas (bloqueio por inatividade; a DEK sai da memória)
-
-**Não** protege contra:
-
-- Processo local com o mesmo usuário do sistema lendo a memória do daemon
-  (`ptrace`, `/proc/<pid>/mem`)
-- Um comando **deliberadamente malicioso** autorizado pelo token: ele recebe os
-  segredos no ambiente e pode encodá-los/exfiltrá-los de formas que um replacedor
-  de strings não acompanha
-- Comprometimento do kernel, do Python ou das dependências
-- Backup do cofre junto com a passphrase no mesmo lugar
-
-Mitigações recomendadas: token por projeto/ambiente, prefixos de comando
-permitidos, rotação de segredos, revisão da auditoria e `envvault lock` quando
-não estiver usando.
-
-### Limitações conhecidas
-
-- Valores com menos de 6 caracteres não são redigidos (evita ruído em portas,
-  flags etc.).
-- A redação é textual: transformações arbitrárias (hash, cifra, split) não são
-  detectadas.
-- Tokens com `allowed_commands` vazio aceitam qualquer argv, inclusive
-  `python3 -c "import os; ..."`, que lê todo o ambiente.
-- O daemon escuta em loopback; qualquer processo local do mesmo usuário pode
-  falar com ele (mas precisa de sessão ou token).
-- SQLite não é um cofre de hardware; a proteção em repouso depende da
-  passphrase.
-
-## API HTTP (resumo)
-
-Sessão humana (cookie + `x-csrf-token`):
-
-- `GET/POST/PATCH/DELETE /v1/projects...`
-- `GET/PUT/DELETE /v1/projects/{id}/secrets...`
-- `POST /v1/projects/{id}/secrets/{key}/reveal`
-- `POST /v1/projects/{id}/import`
-- `POST /v1/projects/{id}/export`
-- `POST /v1/exec`
-- `GET/POST/DELETE /v1/tokens...`
-- `GET /v1/audit`, `GET /v1/audit/verify`
-- `GET/PUT /v1/settings`
-- `POST /v1/generate`
-
-Agente (header `Authorization: Bearer ev_...`):
-
-- `GET /v1/agent/context`
-- `GET /v1/agent/keys`
-- `POST /v1/agent/exec`
-
-Documentação interativa: <http://127.0.0.1:8787/api/docs>.
-
-## Desenvolvimento
+Importe o `.env` existente:
 
 ```bash
-uv sync
-uv run pytest
-uv run ruff check .
-uv run ruff format --check .
+uv run --project /caminho/para/envvault envvault import .env --delete-file
 ```
 
-Estrutura:
+- `--delete-file` apaga o `.env` depois de importar (o cofre vira a fonte da
+  verdade). Pede confirmação.
+- `--replace` sobrescreve chaves que já existem.
+- O parser aceita comentários, `export`, aspas simples/duplas e **nunca executa**
+  o conteúdo.
+
+Ou crie manualmente:
+
+```bash
+uv run --project /caminho/para/envvault envvault set API_TOKEN
+# pede o valor oculto
+```
+
+### 3.7 Passo 5 — executar com injeção
+
+```bash
+uv run --project /caminho/para/envvault envvault run -- npm run dev
+```
+
+O comando **não** passa por shell: cada argumento é preservado. O processo roda
+dentro do diretório do projeto.
+
+Exemplos:
+
+```bash
+envvault run -- python manage.py migrate
+envvault run --cwd sub/dir -- npm test
+```
+
+Se o vault estiver bloqueado, a CLI pede a passphrase.
+
+### 3.8 Passo 6 — abrir o dashboard
+
+<http://127.0.0.1:8787>
+
+Lá você encontra visão geral, projetos, abas de ambiente, segredos, gerador de
+senha, console de execução, import/export, tokens, auditoria e configurações.
+O daemon escuta **somente** em loopback.
+
+### 3.9 Passo 7 — dar acesso ao Claude
+
+Crie um token restrito:
+
+```bash
+uv run envvault token create \
+  --name claude-meu-app \
+  --project meu-app \
+  --environment dev \
+  --allow "npm run" \
+  --allow "pytest"
+```
+
+O token aparece **uma única vez**. No ambiente do agente:
+
+```bash
+export ENVVAULT_TOKEN=ev_...
+```
+
+E o agente usa:
+
+```bash
+envvault context                 # mostra o escopo do token
+envvault run -- pytest -q        # executa com injeção e saída redigida
+```
+
+Sem `--allow`, o token aceita qualquer argv. Restrinja sempre que possível.
+
+---
+
+## 4. Uso diário (cheatsheet)
+
+```bash
+# ciclo de vida
+envvault init                     # cria o cofre e sobe o daemon
+envvault status                   # daemon + estado do cofre
+envvault unlock                   # desbloqueia em memória
+envvault lock                     # descarta a chave e mata execuções
+envvault serve                    # roda o daemon em primeiro plano
+envvault stop                     # para o daemon
+envvault passwd                   # troca a passphrase
+
+# projetos
+envvault project add <slug> --path .
+envvault project list
+envvault project remove <slug>
+envvault link --project <slug> -e dev
+
+# segredos
+envvault set KEY                  # valor oculto
+envvault set KEY --generate       # gera e grava uma senha
+envvault list                     # nomes e versões (nunca valores)
+envvault remove KEY
+envvault reveal KEY --copy        # revalida passphrase, audita
+envvault import .env [--replace] [--delete-file]
+envvault export --out .env.local  # gera arquivo temporário
+
+# execução
+envvault run -- <argv...>
+
+# tokens
+envvault token create -n claude -p app -e dev --allow "npm run"
+envvault token list
+envvault token revoke claude
+envvault context
+
+# auditoria e utilidades
+envvault audit --limit 50
+envvault verify
+envvault generate -l 48 --count 5
+```
+
+---
+
+## 5. `.envvault.toml`
+
+Arquivo versionável, **sem segredos**:
+
+```toml
+project = "meu-app"
+environment = "dev"
+```
+
+A CLI procura no diretório atual e nos pais. Serve só para não repetir
+`--project`/`--environment`.
+
+---
+
+## 6. Gerador de senhas
+
+```bash
+envvault generate                      # 32 caracteres
+envvault generate -l 48 --count 5
+envvault generate --no-symbols --json
+envvault set DB_PASSWORD --generate
+```
+
+Usa o CSPRNG do sistema, remove caracteres ambíguos (`I`, `l`, `1`, `O`, `0`) e
+garante ao menos um caractere de cada conjunto selecionado. A UI expõe o mesmo
+gerador no formulário de segredo.
+
+---
+
+## 7. Variáveis de ambiente
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `ENVVAULT_HOME` | `~/.envvault` | banco, log e PID |
+| `ENVVAULT_HOST` | `127.0.0.1` | bind do daemon |
+| `ENVVAULT_PORT` | `8787` | porta |
+| `ENVVAULT_LOCK_TIMEOUT_MINUTES` | `30` | bloqueio por inatividade |
+| `ENVVAULT_SESSION_IDLE_MINUTES` | `30` | validade da sessão |
+| `ENVVAULT_MAX_EXECS` | `8` | execuções simultâneas |
+| `ENVVAULT_KDF_TIME_COST` | `3` | custo do Argon2id |
+| `ENVVAULT_KDF_MEMORY_KIB` | `65536` | memória do Argon2id (KiB) |
+| `ENVVAULT_KDF_PARALLELISM` | `4` | paralelismo do Argon2id |
+
+---
+
+## 8. Segurança
+
+**Protege contra:**
+- leitura do banco sem a passphrase;
+- vazamento acidental em logs/build/conversa (redação);
+- adulteração silenciosa do log (cadeia de hash);
+- CSRF, DNS rebinding e uso do dashboard por outra origem;
+- sessão esquecida (bloqueio por inatividade).
+
+**Não protege contra:**
+- processo local do mesmo usuário lendo a memória do daemon;
+- comando **deliberadamente malicioso** autorizado pelo token — ele recebe as
+  variáveis e pode codificá-las/exfiltrá-las de formas que a redação textual não
+  acompanha;
+- kernel/Python/dependências comprometidos;
+- backup do cofre junto com a passphrase.
+
+**Limitações conhecidas:**
+- valores com menos de 6 caracteres não são redigidos;
+- transformações arbitrárias (hash, cifra, split) não são detectadas;
+- token sem `allowed_commands` aceita qualquer argv, inclusive
+  `python3 -c "import os; …"`;
+- SQLite não é um cofre de hardware — a proteção em repouso depende da
+  passphrase.
+
+---
+
+## 9. Solução de problemas
+
+| Mensagem / sintoma | Causa | Correção |
+|---|---|---|
+| `daemon não está rodando` | daemon parado | `envvault serve` (primeiro plano) ou `envvault init` |
+| `não autenticado` | sessão expirada | rode o comando de novo e informe a passphrase |
+| `vault bloqueado; …` | inatividade | `envvault unlock` |
+| `informe --project` | fora de um diretório com `.envvault.toml` | `envvault link …` ou passe `--project` |
+| `projeto não encontrado: X` | projeto não registrado | `envvault project add X --path .` |
+| `arquivo não encontrado: .env` | não há `.env` no diretório | rode no diretório certo ou crie o `.env` |
+| `já existe um cofre em …` | `init` rodado duas vezes | use o cofre existente; não rode `init` |
+| `npm error … package.json` | o diretório não é um projeto Node | execute o comando do projeto real |
+| `HTTP 423` | cofre bloqueado | desbloqueie |
+| `HTTP 429` | muitas tentativas de passphrase | espere ~1 minuto |
+| porta ocupada | outro processo em `8787` | `ENVVAULT_PORT=8790 envvault serve` |
+| esqueci a passphrase | — | **não há recuperação**; restaure um backup com a passphrase conhecida |
+
+> A CLI pede a passphrase a cada comando (não persiste sessão). Isso é
+> intencional: a chave não fica em arquivo nem em variável de ambiente.
+
+---
+
+## 10. Estrutura do código
 
 ```
 src/envvault/
@@ -300,8 +416,20 @@ src/envvault/
   cli.py        interface de linha de comando
   crypto.py     Argon2id + AES-256-GCM
   runtime.py    estado em memória (DEK, sessões, execuções)
+tests/          56 testes (pytest)
+docs/adr/       decisões de arquitetura
+AGENTS.md       convenções e invariantes para agentes
 ```
 
-## Licença
+## 11. Desenvolvimento
+
+```bash
+uv sync
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
+```
+
+## 12. Licença
 
 MIT.
