@@ -9,6 +9,7 @@ const state = {
   environment: null,
   secrets: [],
   credentials: [],
+  projectCredentials: [],
   credentialFilter: { query: "", category: "", project: "" },
   auditFilter: { project: "", action: "", limit: 100 },
   execAbort: null,
@@ -525,6 +526,14 @@ async function renderProjects() {
   );
 }
 
+async function loadProjectCredentials(projectId) {
+  const [scoped, globals] = await Promise.all([
+    api(`/v1/credentials?project_id=${encodeURIComponent(projectId)}`),
+    api("/v1/credentials?global_only=true"),
+  ]);
+  return [...scoped.items, ...globals.items];
+}
+
 async function refreshProject() {
   if (!state.project) return;
   state.project = await api(`/v1/projects/${state.project.id}`);
@@ -532,10 +541,14 @@ async function refreshProject() {
   if (!state.environment) {
     state.environment = environments[0] || "dev";
   }
-  const data = await api(
-    `/v1/projects/${state.project.id}/secrets?environment=${encodeURIComponent(state.environment)}`,
-  );
+  const [data, credentials] = await Promise.all([
+    api(
+      `/v1/projects/${state.project.id}/secrets?environment=${encodeURIComponent(state.environment)}`,
+    ),
+    loadProjectCredentials(state.project.id),
+  ]);
   state.secrets = data.items;
+  state.projectCredentials = credentials;
   renderProjectPage();
 }
 
@@ -549,10 +562,14 @@ async function renderProject(id) {
   if (!state.environment || !environments.includes(state.environment)) {
     state.environment = environments[0] || "dev";
   }
-  const data = await api(
-    `/v1/projects/${project.id}/secrets?environment=${encodeURIComponent(state.environment)}`,
-  );
+  const [data, credentials] = await Promise.all([
+    api(
+      `/v1/projects/${project.id}/secrets?environment=${encodeURIComponent(state.environment)}`,
+    ),
+    loadProjectCredentials(project.id),
+  ]);
   state.secrets = data.items;
+  state.projectCredentials = credentials;
   renderProjectPage();
 }
 
@@ -639,6 +656,7 @@ function renderProjectPage() {
       );
 
   const consoleCard = buildConsole(project, env);
+  const credentialsSection = buildProjectCredentials(project);
   const info = el(
     "div",
     { class: "card stack" },
@@ -665,9 +683,98 @@ function renderProjectPage() {
     tabs,
     actions,
     secretsSection,
+    credentialsSection,
     consoleCard,
     info,
   );
+}
+
+function buildProjectCredentials(project) {
+  const own = state.projectCredentials.filter((item) => item.scope === "project");
+  const globals = state.projectCredentials.filter((item) => item.scope === "global");
+
+  const ownRows = own.map((credential) => [
+    el("span", { class: "mono" }, credential.name),
+    el("span", { class: "tag" }, credentialCategoryLabel(credential.category)),
+    el("span", { class: "tag" }, `v${credential.version}`),
+    fmtDate(credential.updated_at),
+    el(
+      "div",
+      { class: "row" },
+      el(
+        "button",
+        { class: "btn small", type: "button", onclick: () => openRevealCredential(credential) },
+        "Revelar",
+      ),
+      el(
+        "button",
+        { class: "btn small", type: "button", onclick: () => openCredentialDialog(credential) },
+        "Editar",
+      ),
+      el(
+        "button",
+        { class: "btn small danger", type: "button", onclick: () => openDeleteCredential(credential) },
+        "Excluir",
+      ),
+    ),
+  ]);
+
+  const ownContent = own.length
+    ? table(["nome", "categoria", "versão", "atualizado", ""], ownRows)
+    : el(
+        "p",
+        { class: "muted" },
+        "Nenhuma credencial específica deste projeto. As globais abaixo também ficam disponíveis aqui.",
+      );
+
+  const globalRows = globals.map((credential) => [
+    el("span", { class: "mono" }, credential.name),
+    el("span", { class: "tag" }, credentialCategoryLabel(credential.category)),
+    el("span", { class: "tag" }, `v${credential.version}`),
+    el(
+      "button",
+      { class: "btn small", type: "button", onclick: () => openRevealCredential(credential) },
+      "Revelar",
+    ),
+  ]);
+
+  const children = [
+    el(
+      "div",
+      { class: "row" },
+      el(
+        "button",
+        {
+          class: "btn primary small",
+          type: "button",
+          onclick: () => openCredentialDialog(null, project),
+        },
+        "Nova credencial deste projeto",
+      ),
+      el(
+        "button",
+        {
+          class: "btn small",
+          type: "button",
+          onclick: () => {
+            state.credentialFilter = { query: "", category: "", project: project.id };
+            location.hash = "#/credentials";
+          },
+        },
+        "Gerenciar todas",
+      ),
+    ),
+    ownContent,
+  ];
+
+  if (globals.length) {
+    children.push(
+      el("p", { class: "muted" }, "Credenciais globais disponíveis neste projeto"),
+      table(["nome", "categoria", "versão", ""], globalRows),
+    );
+  }
+
+  return section("Credenciais do projeto", children);
 }
 
 function buildConsole(project, env) {
@@ -1146,6 +1253,14 @@ function credentialCategoryLabel(value) {
   return found ? found[1] : value;
 }
 
+async function refreshCredentialViews() {
+  if (state.project && location.hash.startsWith("#/projects/")) {
+    await refreshProject();
+  } else {
+    await renderCredentials();
+  }
+}
+
 async function renderCredentials() {
   setHeader(
     "Credenciais",
@@ -1258,7 +1373,7 @@ async function renderCredentials() {
   );
 }
 
-async function openCredentialDialog(credential = null) {
+async function openCredentialDialog(credential = null, defaultProject = null) {
   const editing = Boolean(credential);
   if (!state.projects.length) await loadProjects();
   let current = { username: "", password: "", url: "", notes: "" };
@@ -1299,7 +1414,7 @@ async function openCredentialDialog(credential = null) {
       el("option", { value: item.id }, `Projeto: ${item.slug} — ${item.name}`),
     ),
   );
-  project.value = credential?.project?.id || "";
+  project.value = credential?.project?.id || defaultProject?.id || "";
   const username = el("input", {
     value: current.username || "",
     placeholder: "usuario@exemplo.com",
@@ -1426,7 +1541,7 @@ async function openCredentialDialog(credential = null) {
         await api("/v1/credentials", { method: "POST", body: payload });
         toast("Credencial criada");
       }
-      await renderCredentials();
+      await refreshCredentialViews();
       return true;
     },
   });
@@ -1505,7 +1620,7 @@ function openDeleteCredential(credential) {
     onSubmit: async () => {
       await api(`/v1/credentials/${credential.id}`, { method: "DELETE" });
       toast("Credencial excluída");
-      await renderCredentials();
+      await refreshCredentialViews();
       return true;
     },
   });

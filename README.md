@@ -380,8 +380,9 @@ envvault credential update hostinger --global --generate
 ```
 
 No dashboard, a área **Credenciais** permite criar, buscar, filtrar por projeto,
-revelar com passphrase e excluir. O botão **Credenciais** na página do projeto já
-abre a lista filtrada por aquele projeto.
+revelar com passphrase e excluir. A página de cada projeto também mostra a seção
+**Credenciais do projeto**, com as credenciais daquele projeto e as globais
+disponíveis, revelação direta e criação já no escopo do projeto.
 
 Regras de segurança:
 
