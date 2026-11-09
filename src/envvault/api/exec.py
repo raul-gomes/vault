@@ -1,0 +1,169 @@
+"""Command execution endpoints: one for the human session, one for agents."""
+
+from __future__ import annotations
+
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
+
+from envvault.api.deps import (
+    authorize_agent,
+    get_db,
+    get_runtime,
+    project_or_404,
+    require_agent,
+    require_session,
+)
+from envvault.models import ApiToken
+from envvault.runtime import Runtime
+from envvault.schemas import AgentExecRequest, ExecRequest
+from envvault.services import audit, runner, tokens
+from envvault.services import secrets as secret_service
+
+session_router = APIRouter(tags=["exec"], dependencies=[Depends(require_session)])
+agent_router = APIRouter(tags=["agent"])
+
+SSE_HEADERS = {
+    "Cache-Control": "no-store",
+    "X-Accel-Buffering": "no",
+    "Connection": "keep-alive",
+}
+
+
+@session_router.post("/v1/exec")
+def exec_as_user(
+    payload: ExecRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    state: Annotated[Runtime, Depends(get_runtime)],
+) -> StreamingResponse:
+    """Run a command with secrets injected, authenticated by the web session."""
+    project = project_or_404(db, payload.project_id)
+    cwd = runner.resolve_cwd(project, payload.cwd)
+    command = runner.validate_command(payload.command)
+    values = secret_service.values_for_exec(db, state, project, payload.environment)
+    audit.append(
+        db,
+        actor_type="user",
+        actor_name="user",
+        action="exec.start",
+        project_slug=project.slug,
+        environment=payload.environment,
+        command=" ".join(command),
+        detail={"cwd": str(cwd)},
+        lock=state.lock,
+    )
+    db.commit()
+    record, redactor = runner.spawn(
+        state,
+        project=project,
+        environment=payload.environment,
+        secrets=values,
+        command=command,
+        cwd=cwd,
+        actor_type="user",
+        actor_name="user",
+    )
+    return StreamingResponse(
+        runner.stream(request.app.state.session_factory, state, record, redactor),
+        media_type="text/event-stream",
+        headers=SSE_HEADERS,
+    )
+
+
+@agent_router.get("/v1/agent/context")
+def agent_context(
+    token: Annotated[ApiToken, Depends(require_agent)],
+) -> dict[str, object]:
+    """Describe the token scope so the agent knows what it can ask for."""
+    return {
+        "token_name": token.name,
+        "project": {"slug": token.project.slug, "name": token.project.name},
+        "environments": tokens.environment_list(token),
+        "can_list": token.can_list,
+        "can_inject": token.can_inject,
+        "allowed_commands": tokens.command_list(token),
+        "usage": (
+            "Call POST /v1/agent/exec with {'environment': ..., 'command': [...]}. "
+            "Secret values are injected by the daemon and redacted from output; "
+            "there is no endpoint that returns plaintext."
+        ),
+    }
+
+
+@agent_router.get("/v1/agent/keys")
+def agent_keys(
+    db: Annotated[Session, Depends(get_db)],
+    token: Annotated[ApiToken, Depends(require_agent)],
+    environment: str,
+) -> dict[str, object]:
+    """List key names (never values) for one allowed environment."""
+    if not token.can_list:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "token cannot list keys")
+    try:
+        tokens.authorize_scope(token, project_slug=token.project.slug, environment=environment)
+    except tokens.AgentForbidden as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
+    rows = secret_service.list_names(db, token.project, environment)
+    return {
+        "environment": environment,
+        "items": [
+            {
+                "key": row.key,
+                "version": row.version,
+                "updated_at": row.updated_at.isoformat(),
+            }
+            for row in rows
+        ],
+    }
+
+
+@agent_router.post("/v1/agent/exec")
+def exec_as_agent(
+    payload: AgentExecRequest,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    state: Annotated[Runtime, Depends(get_runtime)],
+    token: Annotated[ApiToken, Depends(require_agent)],
+) -> StreamingResponse:
+    """Run a command with secrets injected, authenticated by a scoped token."""
+    project = token.project
+    authorize_agent(
+        token,
+        project_slug=project.slug,
+        environment=payload.environment,
+        command=payload.command,
+    )
+    cwd = runner.resolve_cwd(project, payload.cwd)
+    command = runner.validate_command(payload.command)
+    values = secret_service.values_for_exec(db, state, project, payload.environment)
+    tokens.touch_usage(db, token)
+    audit.append(
+        db,
+        actor_type="agent",
+        actor_name=token.name,
+        action="exec.start",
+        project_slug=project.slug,
+        environment=payload.environment,
+        command=" ".join(command),
+        detail={"cwd": str(cwd), "token_prefix": token.prefix},
+        lock=state.lock,
+    )
+    db.commit()
+    record, redactor = runner.spawn(
+        state,
+        project=project,
+        environment=payload.environment,
+        secrets=values,
+        command=command,
+        cwd=cwd,
+        actor_type="agent",
+        actor_name=token.name,
+    )
+    return StreamingResponse(
+        runner.stream(request.app.state.session_factory, state, record, redactor),
+        media_type="text/event-stream",
+        headers=SSE_HEADERS,
+    )

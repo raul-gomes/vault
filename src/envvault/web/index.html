@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>EnvVault</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <div id="login-view" class="login">
+      <div class="login-card">
+        <div class="brand">
+          <span class="brand-mark">EV</span>
+          <div>
+            <h1>EnvVault</h1>
+            <p class="muted">cofre local de segredos</p>
+          </div>
+        </div>
+        <form id="login-form" class="stack">
+          <label for="passphrase">Passphrase mestra</label>
+          <input
+            id="passphrase"
+            name="passphrase"
+            type="password"
+            autocomplete="current-password"
+            placeholder="••••••••••••"
+            required
+            autofocus
+          />
+          <button type="submit" class="btn primary" id="login-btn">Desbloquear</button>
+          <p id="login-error" class="error" role="alert"></p>
+        </form>
+        <p class="hint">
+          O daemon escuta apenas em <span class="mono">127.0.0.1</span>. A chave de
+          dados fica só na memória e o cofre bloqueia por inatividade.
+        </p>
+      </div>
+    </div>
+
+    <div id="shell" class="shell hidden">
+      <aside class="sidebar">
+        <div class="brand small">
+          <span class="brand-mark">EV</span>
+          <div>
+            <strong>EnvVault</strong>
+            <p class="muted" id="sidebar-version"></p>
+          </div>
+        </div>
+        <nav class="nav" aria-label="Navegação principal">
+          <button class="nav-item" data-view="overview">Visão geral</button>
+          <button class="nav-item" data-view="projects">Projetos</button>
+          <button class="nav-item" data-view="tokens">Tokens</button>
+          <button class="nav-item" data-view="audit">Auditoria</button>
+          <button class="nav-item" data-view="settings">Configurações</button>
+        </nav>
+        <div class="sidebar-footer">
+          <span class="badge ok" id="lock-state">desbloqueado</span>
+          <button class="btn ghost small" id="lock-btn">Bloquear agora</button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h2 id="view-title">Visão geral</h2>
+            <p class="muted" id="view-subtitle"></p>
+          </div>
+          <div class="topbar-actions" id="topbar-actions"></div>
+        </header>
+        <section id="view" class="view" aria-live="polite"></section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast hidden" role="status"></div>
+
+    <dialog id="modal" class="modal">
+      <div class="modal-card">
+        <header class="modal-header">
+          <h3 id="modal-title">Título</h3>
+          <button type="button" class="icon-btn" id="modal-close" aria-label="Fechar">×</button>
+        </header>
+        <div id="modal-body" class="modal-body"></div>
+        <footer class="modal-footer">
+          <button type="button" class="btn ghost" id="modal-cancel">Cancelar</button>
+          <button type="button" class="btn primary" id="modal-submit">Salvar</button>
+        </footer>
+      </div>
+    </dialog>
+
+    <script src="/static/app.js" type="module"></script>
+  </body>
+</html>
