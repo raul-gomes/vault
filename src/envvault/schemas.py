@@ -111,14 +111,23 @@ class ExecRequest(BaseModel):
     environment: str = Field(min_length=1, max_length=40)
     command: list[str] = Field(min_length=1, max_length=64)
     cwd: str | None = Field(default=None, max_length=500)
+    env: dict[str, str] = Field(default_factory=dict, max_length=64)
+    timeout_seconds: int | None = Field(default=None, ge=1, le=3600)
 
 
 class AgentExecRequest(BaseModel):
-    """Run a command with secrets injected (agent-token-authenticated)."""
+    """Run a command with secrets injected (agent-token-authenticated).
+
+    ``env`` carries non-secret overrides assembled by the daemon. Keys that
+    already exist in the vault are rejected so the agent cannot shadow a
+    stored secret.
+    """
 
     environment: str = Field(min_length=1, max_length=40)
     command: list[str] = Field(min_length=1, max_length=64)
     cwd: str | None = Field(default=None, max_length=500)
+    env: dict[str, str] = Field(default_factory=dict, max_length=64)
+    timeout_seconds: int | None = Field(default=None, ge=1, le=3600)
 
 
 class GenerateRequest(BaseModel):

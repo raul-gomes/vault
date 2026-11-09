@@ -76,6 +76,8 @@ class ExecRecord:
     environment: str
     command: str
     started_at: float = field(default_factory=time.monotonic)
+    env_keys: tuple[str, ...] = ()
+    timeout_seconds: int | None = None
 
 
 class Runtime:

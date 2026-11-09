@@ -225,7 +225,23 @@ Exemplos:
 ```bash
 envvault run -- python manage.py migrate
 envvault run --cwd sub/dir -- npm test
+
+# configuração de variáveis montada pelo cofre (sem sobrescrever segredos)
+envvault run --env PORT=3001 --env NODE_ENV=development -- npm run dev
+
+# encerra o grupo de processos depois de 120s (útil para servidores de dev)
+envvault run --env PORT=3001 --timeout 120 -- npm run dev
 ```
+
+O cofre monta o ambiente do processo assim:
+
+1. ambiente atual do daemon (sem nenhuma variável `ENVVAULT_*`);
+2. segredos do projeto/ambiente, descriptografados em memória;
+3. variáveis extras enviadas na requisição (`env`).
+
+Chaves `ENVVAULT_*` são reservadas e uma variável extra **não pode** sobrescrever
+uma chave que existe no cofre — a requisição é rejeitada com `400`. A auditoria
+registra apenas os **nomes** das variáveis extras, nunca os valores.
 
 Se o vault estiver bloqueado, a CLI pede a passphrase.
 
@@ -260,10 +276,40 @@ E o agente usa:
 
 ```bash
 envvault context                 # mostra o escopo do token
+envvault keys -e dev             # lista nomes de chaves (nunca valores)
 envvault run -- pytest -q        # executa com injeção e saída redigida
 ```
 
 Sem `--allow`, o token aceita qualquer argv. Restrinja sempre que possível.
+
+#### Requisição direta (Claude, scripts, integrações)
+
+O agente pode montar a execução enviando o comando **e** variáveis extras:
+
+```bash
+curl -sN http://127.0.0.1:8787/v1/agent/exec \
+  -H "Authorization: Bearer $ENVVAULT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "environment": "dev",
+    "command": ["npm", "run", "dev"],
+    "cwd": "frontend",
+    "env": {"PORT": "3001", "NODE_ENV": "development"},
+    "timeout_seconds": 120
+  }'
+```
+
+A resposta é um stream SSE (`start`, `output`, `exit`). O daemon:
+
+- descriptografa os segredos e monta o ambiente;
+- valida as variáveis extras (nome, tamanho, prefixo `ENVVAULT_` e colisão com
+  chaves do cofre);
+- roda o argv sem shell, com grupo de processos próprio;
+- redige qualquer segredo antes de enviar a saída;
+- encerra o grupo ao fim do `timeout_seconds`.
+
+Em `GET /v1/agent/context` o próprio token descreve o escopo, os limites e um
+exemplo de requisição — é o que a skill do segundo cérebro consulta.
 
 ---
 
@@ -296,12 +342,14 @@ envvault export --out .env.local  # gera arquivo temporário
 
 # execução
 envvault run -- <argv...>
+envvault run --env PORT=3001 --timeout 120 -- npm run dev
 
 # tokens
 envvault token create -n claude -p app -e dev --allow "npm run"
 envvault token list
 envvault token revoke claude
-envvault context
+envvault context                   # escopo do token atual
+envvault keys -e dev               # nomes de chaves do token (agente)
 
 # credenciais de serviços (globais ou por projeto)
 envvault credential add hostinger -c hosting -p meu-app

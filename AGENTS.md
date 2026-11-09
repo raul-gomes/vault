@@ -43,7 +43,7 @@ names and execute commands — never reveal values.
 | `src/envvault/services/vault.py` | init/unlock/lock, passphrase change, idle enforcement |
 | `src/envvault/services/secrets.py` | encrypted CRUD, reveal, import/export, exec material |
 | `src/envvault/services/credentials.py` | global/project service credentials, encrypted payload, audited reveal |
-| `src/envvault/services/runner.py` | spawn child, redact stream, kill process group |
+| `src/envvault/services/runner.py` | spawn child, assemble env, redact stream, timeout/process-group kill |
 | `src/envvault/services/tokens.py` | token creation and scope authorization |
 | `src/envvault/services/audit.py` | append-only hash chain |
 | `src/envvault/api/` | FastAPI routers and auth dependencies |
@@ -68,6 +68,16 @@ process group. `ENVVAULT_*` variables are stripped from the child env.
 - Agent requests: `Authorization: Bearer ev_...`; token hash stored in SQLite.
 - Idle timeout applies to both planes via `vault.enforce_idle`.
 - Locking clears the DEK, drops every session and terminates executions.
+
+## Exec request rules
+
+- `command` is an argv list; it never passes through a shell.
+- Optional `env` overrides are merged by the daemon. They cannot use the
+  `ENVVAULT_*` prefix or shadow a key stored in the vault; the request fails
+  with `400` instead of silently replacing the secret.
+- Audit entries store only the override **key names**, never their values.
+- `timeout_seconds` terminates the whole process group; the `exit` SSE event
+  and the audit entry carry `timed_out`.
 
 ## Database
 

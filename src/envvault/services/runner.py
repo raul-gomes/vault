@@ -17,11 +17,16 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from envvault.models import Project
 from envvault.runtime import ExecRecord, Runtime
-from envvault.services import audit
+from envvault.services import audit, envfile
 from envvault.services.redact import Redactor
 
 MAX_LINE_BUFFER = 64 * 1024
 SSE_KEEPALIVE_SECONDS = 15
+MAX_ENV_OVERRIDES = 64
+MAX_ENV_KEY_LENGTH = 120
+MAX_ENV_VALUE_BYTES = 64 * 1024
+MAX_ENV_TOTAL_BYTES = 256 * 1024
+RESERVED_ENV_PREFIX = "ENVVAULT_"
 
 
 class ExecError(ValueError):
@@ -55,6 +60,46 @@ def validate_command(command: list[str]) -> list[str]:
     return cleaned
 
 
+def validate_env(
+    overrides: dict[str, str] | None, *, vault_keys: set[str] | None = None
+) -> dict[str, str]:
+    """Validate non-secret environment overrides sent with an exec request.
+
+    Overrides are merged into the child environment by the daemon. Vault keys
+    win by construction: a request that tries to redefine one is rejected
+    instead of silently shadowing the stored secret.
+    """
+    if not overrides:
+        return {}
+    if len(overrides) > MAX_ENV_OVERRIDES:
+        raise ExecError(f"at most {MAX_ENV_OVERRIDES} environment overrides")
+    cleaned: dict[str, str] = {}
+    total = 0
+    for key, value in overrides.items():
+        if (
+            not isinstance(key, str)
+            or len(key) > MAX_ENV_KEY_LENGTH
+            or not envfile.KEY_PATTERN.match(key)
+        ):
+            raise ExecError(f"invalid environment key: {key!r}")
+        if key.startswith(RESERVED_ENV_PREFIX):
+            raise ExecError(f"environment key is reserved: {key}")
+        if not isinstance(value, str):
+            raise ExecError(f"environment value for {key} must be a string")
+        size = len(value.encode("utf-8"))
+        if size > MAX_ENV_VALUE_BYTES:
+            raise ExecError(f"environment value for {key} is too large")
+        total += size
+        cleaned[key] = value
+    if total > MAX_ENV_TOTAL_BYTES:
+        raise ExecError("environment overrides are too large")
+    if vault_keys:
+        collisions = sorted(set(cleaned) & vault_keys)
+        if collisions:
+            raise ExecError("cannot override vault keys: " + ", ".join(collisions))
+    return cleaned
+
+
 def spawn(
     state: Runtime,
     *,
@@ -65,11 +110,15 @@ def spawn(
     cwd: Path,
     actor_type: str,
     actor_name: str,
+    extra_env: dict[str, str] | None = None,
+    timeout_seconds: int | None = None,
 ) -> tuple[ExecRecord, Redactor]:
     """Start the child with secrets in its environment and no ENVVAULT_* leak."""
     command = validate_command(command)
+    extra_env = validate_env(extra_env, vault_keys=set(secrets))
     base_env = {key: value for key, value in os.environ.items() if not key.startswith("ENVVAULT_")}
     base_env.update(secrets)
+    base_env.update(extra_env)
     base_env["ENVVAULT_PROJECT"] = project.slug
     base_env["ENVVAULT_ENV"] = environment
     try:
@@ -93,6 +142,8 @@ def spawn(
         project_slug=project.slug,
         environment=environment,
         command=" ".join(command),
+        env_keys=tuple(sorted(extra_env)),
+        timeout_seconds=timeout_seconds,
     )
     state.add_exec(record)
     return record, Redactor(secrets)
@@ -124,15 +175,31 @@ def stream(
             "project": record.project_slug,
             "environment": record.environment,
             "command": record.command,
+            "env_keys": list(record.env_keys),
+            "timeout_seconds": record.timeout_seconds,
         }
     )
     exit_code: int | None = None
     duration_ms = 0
     finished = False
+    timed_out = False
+    deadline = record.started_at + record.timeout_seconds if record.timeout_seconds else None
     try:
         while True:
+            wait = SSE_KEEPALIVE_SECONDS
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    if not timed_out:
+                        timed_out = True
+                        from envvault.runtime import _terminate_process_group
+
+                        _terminate_process_group(record.process)
+                    wait = 0.1
+                else:
+                    wait = min(wait, remaining)
             try:
-                item = output.get(timeout=SSE_KEEPALIVE_SECONDS)
+                item = output.get(timeout=max(wait, 0.1))
             except queue.Empty:
                 yield ": ping\n\n"
                 continue
@@ -149,6 +216,7 @@ def stream(
                 "exec_id": record.exec_id,
                 "code": exit_code,
                 "duration_ms": duration_ms,
+                "timed_out": timed_out,
             }
         )
     finally:
@@ -172,6 +240,8 @@ def stream(
                     "exit_code": exit_code,
                     "duration_ms": duration_ms,
                     "redacted_patterns": redactor.pattern_count,
+                    "env_keys": list(record.env_keys),
+                    "timed_out": timed_out,
                 },
                 lock=state.lock,
             )

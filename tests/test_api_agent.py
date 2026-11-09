@@ -66,6 +66,93 @@ def test_agent_exec_redacts_output(
     assert events[-1]["code"] == 0
 
 
+def test_agent_exec_assembles_env_overrides(
+    auth: ApiClient, agent: dict, project: dict, secret: dict
+) -> None:
+    command = [
+        "python3",
+        "-c",
+        "import os;print('port=' + os.environ['PORT']);print('secret=' + os.environ['SECRET_KEY'])",
+    ]
+    response = auth.client.post(
+        "/v1/agent/exec",
+        headers=agent["headers"],
+        json={
+            "environment": "dev",
+            "command": command,
+            "env": {"PORT": "3001", "NODE_ENV": "development"},
+            "timeout_seconds": 30,
+        },
+    )
+    assert response.status_code == 200, response.text
+    events = sse_events(response.text)
+    assert events[0]["env_keys"] == ["NODE_ENV", "PORT"]
+    assert events[0]["timeout_seconds"] == 30
+    output = "".join(event.get("text", "") for event in events if event["type"] == "output")
+    assert "port=3001" in output
+    assert "secret=[REDACTED:SECRET_KEY]" in output
+    assert SECRET_VALUE not in response.text
+    assert events[-1]["timed_out"] is False
+
+    audit_text = auth.get("/v1/audit").text
+    assert "PORT" in audit_text
+    assert "3001" not in audit_text
+
+
+def test_agent_cannot_override_vault_keys(auth: ApiClient, agent: dict, secret: dict) -> None:
+    response = auth.client.post(
+        "/v1/agent/exec",
+        headers=agent["headers"],
+        json={
+            "environment": "dev",
+            "command": ["echo", "hi"],
+            "env": {"SECRET_KEY": "shadow"},
+        },
+    )
+    assert response.status_code == 400
+    assert "SECRET_KEY" in response.json()["detail"]
+
+
+def test_agent_rejects_reserved_and_invalid_env_keys(
+    auth: ApiClient, agent: dict, secret: dict
+) -> None:
+    reserved = auth.client.post(
+        "/v1/agent/exec",
+        headers=agent["headers"],
+        json={
+            "environment": "dev",
+            "command": ["echo", "hi"],
+            "env": {"ENVVAULT_HOME": "/tmp"},
+        },
+    )
+    assert reserved.status_code == 400
+
+    invalid = auth.client.post(
+        "/v1/agent/exec",
+        headers=agent["headers"],
+        json={"environment": "dev", "command": ["echo", "hi"], "env": {"bad-key": "x"}},
+    )
+    assert invalid.status_code == 400
+
+
+def test_agent_exec_timeout_stops_process(auth: ApiClient, agent: dict, secret: dict) -> None:
+    response = auth.client.post(
+        "/v1/agent/exec",
+        headers=agent["headers"],
+        json={
+            "environment": "dev",
+            "command": ["python3", "-c", "import time;time.sleep(30)"],
+            "timeout_seconds": 1,
+        },
+    )
+    assert response.status_code == 200
+    events = sse_events(response.text)
+    assert events[-1]["type"] == "exit"
+    assert events[-1]["timed_out"] is True
+    assert events[-1]["code"] != 0
+    assert events[-1]["duration_ms"] < 15000
+
+
 def test_agent_command_prefix_is_enforced(auth: ApiClient, project: dict) -> None:
     restricted = auth.post(
         "/v1/tokens",

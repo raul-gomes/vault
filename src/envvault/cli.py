@@ -17,6 +17,8 @@ from typing import Any, NoReturn
 
 import httpx
 import typer
+from click.exceptions import ClickException
+from click.exceptions import Exit as ClickExit
 from rich.console import Console
 from rich.table import Table
 
@@ -213,6 +215,17 @@ def _target(project: str | None, environment: str | None) -> tuple[str, str]:
     if not resolved_environment:
         raise CliError("informe --environment (ou defina environment no .envvault.toml)")
     return resolved_project, resolved_environment
+
+
+def _env_overrides(values: list[str]) -> dict[str, str]:
+    """Parse repeated ``KEY=VALUE`` flags into an environment map."""
+    overrides: dict[str, str] = {}
+    for item in values:
+        key, separator, value = item.partition("=")
+        if not separator or not key:
+            raise CliError(f"use KEY=VALOR em --env (recebido: {item!r})")
+        overrides[key] = value
+    return overrides
 
 
 def _table(title: str, columns: list[str], rows: list[list[str]]) -> None:
@@ -698,17 +711,24 @@ def run(
     project: str | None = typer.Option(None, "--project", "-p"),
     environment: str | None = typer.Option(None, "--environment", "-e"),
     cwd: str | None = typer.Option(None, "--cwd", help="Diretório de execução"),
+    env: list[str] = typer.Option(
+        [], "--env", "-E", help="Variável extra KEY=VALOR (repetível, não sobrescreve segredo)"
+    ),
+    timeout: int | None = typer.Option(
+        None, "--timeout", help="Segundos antes de encerrar o processo"
+    ),
 ) -> None:
     """Roda um comando com os segredos injetados pelo daemon.
 
-    Exemplo: envvault run -- npm run dev
+    Exemplo: envvault run --env PORT=3001 --timeout 120 -- npm run dev
     """
     command = list(ctx.args)
     if command and command[0] == "--":
         command = command[1:]
     if not command:
         _fail("informe o comando após --, ex.: envvault run -- npm run dev")
-    slug, env = _target(project, environment)
+    slug, env_name = _target(project, environment)
+    overrides = _env_overrides(env)
     settings = Settings.from_env()
     token = os.environ.get("ENVVAULT_TOKEN")
     if token:
@@ -717,7 +737,13 @@ def run(
             code = _stream_exec(
                 client,
                 "/v1/agent/exec",
-                {"environment": env, "command": command, "cwd": cwd},
+                {
+                    "environment": env_name,
+                    "command": command,
+                    "cwd": cwd,
+                    "env": overrides,
+                    "timeout_seconds": timeout,
+                },
                 None,
             )
         finally:
@@ -731,9 +757,11 @@ def run(
                 "/v1/exec",
                 {
                     "project_id": item["id"],
-                    "environment": env,
+                    "environment": env_name,
                     "command": command,
                     "cwd": cwd,
+                    "env": overrides,
+                    "timeout_seconds": timeout,
                 },
                 session.csrf,
             )
@@ -754,6 +782,34 @@ def context() -> None:
         response = client.get("/v1/agent/context")
         _raise_for_status(response)
         console.print_json(json.dumps(response.json()))
+    finally:
+        client.close()
+
+
+@app.command()
+def keys(
+    environment: str | None = typer.Option(
+        None, "--environment", "-e", help="Ambiente (padrão: do .envvault.toml)"
+    ),
+) -> None:
+    """Lista nomes de chaves do token atual (nunca os valores)."""
+    token = os.environ.get("ENVVAULT_TOKEN")
+    if not token:
+        _fail("ENVVAULT_TOKEN não definido; como humano, use `envvault list`")
+    resolved = environment or (_project_config() or {}).get("environment")
+    if not resolved:
+        _fail("informe --environment (ou defina environment no .envvault.toml)")
+    settings = Settings.from_env()
+    client = _token_client(settings, token)
+    try:
+        response = client.get("/v1/agent/keys", params={"environment": resolved})
+        _raise_for_status(response)
+        items = response.json()["items"]
+        _table(
+            f"chaves/{resolved}",
+            ["chave", "versão", "atualizado em"],
+            [[item["key"], str(item["version"]), item["updated_at"]] for item in items],
+        )
     finally:
         client.close()
 
@@ -1184,8 +1240,17 @@ def generate(
 
 
 def main() -> None:
-    """Console entry point."""
-    app()
+    """Console entry point with friendly errors instead of tracebacks."""
+    try:
+        app(standalone_mode=False)
+    except CliError as exc:
+        typer.secho(f"erro: {exc}", fg=typer.colors.RED, err=True)
+        raise SystemExit(1) from None
+    except ClickExit as exc:
+        raise SystemExit(exc.exit_code) from None
+    except ClickException as exc:
+        exc.show()
+        raise SystemExit(exc.exit_code) from None
 
 
 if __name__ == "__main__":

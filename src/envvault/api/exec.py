@@ -44,6 +44,7 @@ def exec_as_user(
     cwd = runner.resolve_cwd(project, payload.cwd)
     command = runner.validate_command(payload.command)
     values = secret_service.values_for_exec(db, state, project, payload.environment)
+    extra_env = runner.validate_env(payload.env, vault_keys=set(values))
     audit.append(
         db,
         actor_type="user",
@@ -52,7 +53,11 @@ def exec_as_user(
         project_slug=project.slug,
         environment=payload.environment,
         command=" ".join(command),
-        detail={"cwd": str(cwd)},
+        detail={
+            "cwd": str(cwd),
+            "env_keys": sorted(extra_env),
+            "timeout_seconds": payload.timeout_seconds,
+        },
         lock=state.lock,
     )
     db.commit()
@@ -65,6 +70,8 @@ def exec_as_user(
         cwd=cwd,
         actor_type="user",
         actor_name="user",
+        extra_env=extra_env,
+        timeout_seconds=payload.timeout_seconds,
     )
     return StreamingResponse(
         runner.stream(request.app.state.session_factory, state, record, redactor),
@@ -86,10 +93,24 @@ def agent_context(
         "can_inject": token.can_inject,
         "allowed_commands": tokens.command_list(token),
         "usage": (
-            "Call POST /v1/agent/exec with {'environment': ..., 'command': [...]}. "
-            "Secret values are injected by the daemon and redacted from output; "
-            "there is no endpoint that returns plaintext."
+            "Call POST /v1/agent/exec with {'environment': ..., 'command': [...], "
+            "'env': {...}, 'timeout_seconds': ...}. The daemon injects the vault "
+            "secrets, assembles the extra env vars and redacts the output; there is "
+            "no endpoint that returns plaintext. Env keys already stored in the "
+            "vault cannot be overridden."
         ),
+        "request_example": {
+            "environment": "dev",
+            "command": ["npm", "run", "dev"],
+            "cwd": "frontend",
+            "env": {"PORT": "3001", "NODE_ENV": "development"},
+            "timeout_seconds": 120,
+        },
+        "limits": {
+            "max_env_overrides": 64,
+            "max_env_value_bytes": 64 * 1024,
+            "max_timeout_seconds": 3600,
+        },
     }
 
 
@@ -139,6 +160,7 @@ def exec_as_agent(
     cwd = runner.resolve_cwd(project, payload.cwd)
     command = runner.validate_command(payload.command)
     values = secret_service.values_for_exec(db, state, project, payload.environment)
+    extra_env = runner.validate_env(payload.env, vault_keys=set(values))
     tokens.touch_usage(db, token)
     audit.append(
         db,
@@ -148,7 +170,12 @@ def exec_as_agent(
         project_slug=project.slug,
         environment=payload.environment,
         command=" ".join(command),
-        detail={"cwd": str(cwd), "token_prefix": token.prefix},
+        detail={
+            "cwd": str(cwd),
+            "token_prefix": token.prefix,
+            "env_keys": sorted(extra_env),
+            "timeout_seconds": payload.timeout_seconds,
+        },
         lock=state.lock,
     )
     db.commit()
@@ -161,6 +188,8 @@ def exec_as_agent(
         cwd=cwd,
         actor_type="agent",
         actor_name=token.name,
+        extra_env=extra_env,
+        timeout_seconds=payload.timeout_seconds,
     )
     return StreamingResponse(
         runner.stream(request.app.state.session_factory, state, record, redactor),

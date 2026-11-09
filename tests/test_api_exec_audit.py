@@ -38,6 +38,39 @@ def test_session_exec_propagates_exit_code(auth: ApiClient, project: dict, secre
     assert events[-1]["code"] == 7
 
 
+def test_session_exec_assembles_env_overrides(auth: ApiClient, project: dict, secret: dict) -> None:
+    response = auth.post(
+        "/v1/exec",
+        json={
+            "project_id": project["id"],
+            "environment": "dev",
+            "command": [
+                "python3",
+                "-c",
+                "import os;print('port=' + os.environ['PORT']);print(os.environ['SECRET_KEY'])",
+            ],
+            "env": {"PORT": "4000"},
+        },
+    )
+    assert response.status_code == 200
+    events = sse_events(response.text)
+    output = "".join(event.get("text", "") for event in events if event["type"] == "output")
+    assert "port=4000" in output
+    assert "[REDACTED:SECRET_KEY]" in output
+    assert SECRET_VALUE not in response.text
+
+    shadow = auth.post(
+        "/v1/exec",
+        json={
+            "project_id": project["id"],
+            "environment": "dev",
+            "command": ["echo", "hi"],
+            "env": {"SECRET_KEY": "shadow"},
+        },
+    )
+    assert shadow.status_code == 400
+
+
 def test_session_exec_rejects_cwd_outside_project(
     auth: ApiClient, project: dict, secret: dict
 ) -> None:
