@@ -421,6 +421,30 @@ def project_add(
         session.close()
 
 
+@project_app.command("update")
+def project_update(
+    slug: str = typer.Argument(..., help="Slug do projeto"),
+    name: str | None = typer.Option(None, "--name", "-n", help="Novo nome exibido"),
+    path: str | None = typer.Option(None, "--path", "-p", help="Nova pasta do projeto"),
+) -> None:
+    """Atualiza o nome e/ou a pasta de um projeto registrado."""
+    if name is None and path is None:
+        _fail("informe --name e/ou --path")
+    settings = Settings.from_env()
+    session = _login(settings)
+    try:
+        project = _find_project(session, slug)
+        payload: dict[str, Any] = {}
+        if name is not None:
+            payload["name"] = name
+        if path is not None:
+            payload["path"] = path
+        updated = session.request("PATCH", f"/v1/projects/{project['id']}", json=payload).json()
+        console.print(f"[green]Projeto atualizado:[/green] {updated['slug']} → {updated['path']}")
+    finally:
+        session.close()
+
+
 @project_app.command("list")
 def project_list() -> None:
     """Lista os projetos registrados."""

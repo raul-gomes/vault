@@ -38,7 +38,11 @@ def resolve_cwd(project: Project, requested: str | None) -> Path:
     base = Path(project.path).expanduser().resolve()
     cwd = Path(requested).expanduser().resolve() if requested else base
     if not cwd.is_relative_to(base):
-        raise ExecError(f"cwd must be inside {base}")
+        raise ExecError(
+            f"cwd must be inside the registered project path ({base}); "
+            "update the project path in the dashboard or with "
+            "`envvault project update <slug> --path <pasta>`"
+        )
     if not cwd.is_dir():
         raise ExecError(f"cwd does not exist: {cwd}")
     return cwd
