@@ -17,8 +17,6 @@ from typing import Any, NoReturn
 
 import httpx
 import typer
-from click.exceptions import ClickException
-from click.exceptions import Exit as ClickExit
 from rich.console import Console
 from rich.table import Table
 
@@ -285,6 +283,8 @@ def _stream_exec(client: httpx.Client, path: str, payload: dict[str, Any], csrf:
             return exit_code
     except KeyboardInterrupt:
         return 130
+    except httpx.HTTPError as exc:
+        _fail(f"não consegui falar com o daemon: {exc}")
 
 
 # --------------------------------------------------------------------------- #
@@ -469,7 +469,9 @@ def project_remove(
 
 @app.command()
 def link(
-    project: str = typer.Option(..., "--project", "-p", help="Slug do projeto"),
+    project: str | None = typer.Option(
+        None, "--project", "-p", help="Slug do projeto (padrão: nome da pasta atual)"
+    ),
     environment: str = typer.Option("dev", "--environment", "-e", help="Ambiente padrão"),
     force: bool = typer.Option(False, "--force", help="Sobrescrever arquivo existente"),
 ) -> None:
@@ -477,8 +479,9 @@ def link(
     target = Path.cwd() / PROJECT_FILE
     if target.exists() and not force:
         _fail(f"{target} já existe (use --force)")
+    slug = project or typer.prompt("Slug do projeto", default=Path.cwd().name)
     target.write_text(
-        f'project = "{project}"\nenvironment = "{environment}"\n',
+        f'project = "{slug}"\nenvironment = "{environment}"\n',
         encoding="utf-8",
     )
     console.print(f"[green]Criado[/green] {target}")
@@ -702,6 +705,16 @@ def _token_client(settings: Settings, token: str) -> httpx.Client:
     )
 
 
+def _token_json(client: httpx.Client, path: str, params: dict[str, Any] | None = None) -> Any:
+    """GET a token endpoint with a friendly error when the daemon is down."""
+    try:
+        response = client.get(path, params=params)
+    except httpx.HTTPError as exc:
+        _fail(f"não consegui falar com o daemon: {exc}")
+    _raise_for_status(response)
+    return response.json()
+
+
 @app.command(
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
     add_help_option=True,
@@ -779,9 +792,7 @@ def context() -> None:
     settings = Settings.from_env()
     client = _token_client(settings, token)
     try:
-        response = client.get("/v1/agent/context")
-        _raise_for_status(response)
-        console.print_json(json.dumps(response.json()))
+        console.print_json(json.dumps(_token_json(client, "/v1/agent/context")))
     finally:
         client.close()
 
@@ -802,9 +813,7 @@ def keys(
     settings = Settings.from_env()
     client = _token_client(settings, token)
     try:
-        response = client.get("/v1/agent/keys", params={"environment": resolved})
-        _raise_for_status(response)
-        items = response.json()["items"]
+        items = _token_json(client, "/v1/agent/keys", params={"environment": resolved})["items"]
         _table(
             f"chaves/{resolved}",
             ["chave", "versão", "atualizado em"],
@@ -1242,15 +1251,10 @@ def generate(
 def main() -> None:
     """Console entry point with friendly errors instead of tracebacks."""
     try:
-        app(standalone_mode=False)
+        app()
     except CliError as exc:
         typer.secho(f"erro: {exc}", fg=typer.colors.RED, err=True)
         raise SystemExit(1) from None
-    except ClickExit as exc:
-        raise SystemExit(exc.exit_code) from None
-    except ClickException as exc:
-        exc.show()
-        raise SystemExit(exc.exit_code) from None
 
 
 if __name__ == "__main__":
