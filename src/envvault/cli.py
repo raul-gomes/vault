@@ -20,7 +20,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from envvault import __version__
+from envvault import __version__, tokenstore
 from envvault.config import Settings
 from envvault.db import build_engine, build_session_factory, secure_database_files
 from envvault.passwords import (
@@ -739,6 +739,14 @@ def _token_json(client: httpx.Client, path: str, params: dict[str, Any] | None =
     return response.json()
 
 
+def _agent_token(settings: Settings, slug: str) -> tokenstore.TokenRef | None:
+    """Resolve an agent token from ENVVAULT_TOKEN or the project token file."""
+    try:
+        return tokenstore.resolve(settings.home, slug, os.environ.get("ENVVAULT_TOKEN"))
+    except tokenstore.TokenStoreError as exc:
+        _fail(str(exc))
+
+
 @app.command(
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
     add_help_option=True,
@@ -767,9 +775,9 @@ def run(
     slug, env_name = _target(project, environment)
     overrides = _env_overrides(env)
     settings = Settings.from_env()
-    token = os.environ.get("ENVVAULT_TOKEN")
-    if token:
-        client = _token_client(settings, token)
+    auth = _agent_token(settings, slug)
+    if auth:
+        client = _token_client(settings, auth.value)
         try:
             code = _stream_exec(
                 client,
@@ -808,12 +816,24 @@ def run(
 
 
 @app.command()
-def context() -> None:
-    """Mostra o escopo do token de agente atual (ENVVAULT_TOKEN)."""
-    token = os.environ.get("ENVVAULT_TOKEN")
-    if not token:
-        _fail("ENVVAULT_TOKEN não definido")
+def context(
+    project: str | None = typer.Option(None, "--project", "-p", help="Projeto do token local"),
+) -> None:
+    """Mostra o escopo do token de agente (projeto, ambiente, comandos)."""
     settings = Settings.from_env()
+    env_token = os.environ.get("ENVVAULT_TOKEN")
+    if env_token:
+        token = env_token
+    else:
+        slug = project or (_project_config() or {}).get("project")
+        if not slug:
+            _fail("informe --project (ou defina ENVVAULT_TOKEN / .envvault.toml)")
+        auth = _agent_token(settings, slug)
+        if auth is None:
+            _fail(
+                f"nenhum token local para {slug}; crie com `envvault token create -p {slug} --save`"
+            )
+        token = auth.value
     client = _token_client(settings, token)
     try:
         console.print_json(json.dumps(_token_json(client, "/v1/agent/context")))
@@ -823,19 +843,21 @@ def context() -> None:
 
 @app.command()
 def keys(
+    project: str | None = typer.Option(None, "--project", "-p", help="Projeto do token local"),
     environment: str | None = typer.Option(
         None, "--environment", "-e", help="Ambiente (padrão: do .envvault.toml)"
     ),
 ) -> None:
-    """Lista nomes de chaves do token atual (nunca os valores)."""
-    token = os.environ.get("ENVVAULT_TOKEN")
-    if not token:
-        _fail("ENVVAULT_TOKEN não definido; como humano, use `envvault list`")
-    resolved = environment or (_project_config() or {}).get("environment")
-    if not resolved:
-        _fail("informe --environment (ou defina environment no .envvault.toml)")
+    """Lista nomes de chaves do token do projeto (nunca os valores)."""
+    slug, resolved = _target(project, environment)
     settings = Settings.from_env()
-    client = _token_client(settings, token)
+    auth = _agent_token(settings, slug)
+    if auth is None:
+        _fail(
+            f"nenhum token para {slug}; crie com `envvault token create -p {slug} --save` "
+            "(como humano, use `envvault list`)"
+        )
+    client = _token_client(settings, auth.value)
     try:
         items = _token_json(client, "/v1/agent/keys", params={"environment": resolved})["items"]
         _table(
@@ -860,8 +882,13 @@ def token_create(
     allow: list[str] = typer.Option([], "--allow", help="Prefixo de comando permitido (repetível)"),
     no_list: bool = typer.Option(False, "--no-list", help="Não permitir listar chaves"),
     no_inject: bool = typer.Option(False, "--no-inject", help="Não permitir execução"),
+    save: bool = typer.Option(
+        True,
+        "--save/--no-save",
+        help="Grava em ~/.envvault/agent-tokens/<projeto>.token (0600) em vez de imprimir",
+    ),
 ) -> None:
-    """Cria um token de agente (o valor aparece uma única vez)."""
+    """Cria um token de agente e, por padrão, salva em um arquivo 0600."""
     settings = Settings.from_env()
     session = _login(settings)
     try:
@@ -878,11 +905,31 @@ def token_create(
                 "allowed_commands": allow,
             },
         )
-        raw = response.json()["token"]
-        console.print("[bold green]Token criado.[/bold green] Ele não será mostrado novamente:")
-        console.print(raw)
-        console.print("\nUse no ambiente do agente:")
-        console.print(f"  export ENVVAULT_TOKEN={raw}")
+        created = response.json()
+        raw = created["token"]
+        if save:
+            try:
+                path = tokenstore.save(
+                    settings.home,
+                    item["slug"],
+                    raw,
+                    token_id=created["item"]["id"],
+                    name=name,
+                )
+            except tokenstore.TokenStoreError as exc:
+                _fail(str(exc))
+            console.print(f"[bold green]Token criado e salvo:[/bold green] {path} (0600)")
+            console.print(f"Use de qualquer pasta: envvault run -p {item['slug']} -- <comando>")
+            if os.environ.get("ENVVAULT_TOKEN"):
+                console.print(
+                    "[yellow]ENVVAULT_TOKEN está definido neste shell e tem prioridade; "
+                    "rode `unset ENVVAULT_TOKEN` para usar o arquivo do projeto.[/yellow]"
+                )
+        else:
+            console.print("[bold green]Token criado.[/bold green] Ele não será mostrado novamente:")
+            console.print(raw)
+            console.print("\nUse no ambiente do agente:")
+            console.print(f"  export ENVVAULT_TOKEN={raw}")
         if allow:
             console.print(f"Comandos permitidos: {', '.join(allow)}")
         else:
@@ -900,21 +947,27 @@ def token_list() -> None:
     session = _login(settings)
     try:
         items = session.request("GET", "/v1/tokens").json()["items"]
-        rows = [
-            [
-                item["name"],
-                item["project"]["slug"],
-                ", ".join(item["environments"]),
-                ("listar " if item["can_list"] else "")
-                + ("executar" if item["can_inject"] else ""),
-                item["last_used_at"] or "nunca",
-                "ativo" if item["active"] else "revogado",
-            ]
-            for item in items
-        ]
+        rows = []
+        for item in items:
+            slug = item["project"]["slug"]
+            local_id = tokenstore.local_token_id(settings.home, slug)
+            has_file = tokenstore.exists(settings.home, slug)
+            local = item["active"] and (local_id == item["id"] if local_id else has_file)
+            rows.append(
+                [
+                    item["name"],
+                    slug,
+                    ", ".join(item["environments"]),
+                    ("listar " if item["can_list"] else "")
+                    + ("executar" if item["can_inject"] else ""),
+                    item["last_used_at"] or "nunca",
+                    "ativo" if item["active"] else "revogado",
+                    "sim" if local else "—",
+                ]
+            )
         _table(
             "Tokens",
-            ["nome", "projeto", "ambientes", "permissões", "último uso", "status"],
+            ["nome", "projeto", "ambientes", "permissões", "último uso", "status", "local"],
             rows,
         )
     finally:
@@ -940,6 +993,16 @@ def token_revoke(
             raise typer.Exit(1)
         session.request("DELETE", f"/v1/tokens/{matches[0]['id']}")
         console.print(f"[yellow]Token revogado:[/yellow] {name}")
+        slug = matches[0]["project"]["slug"]
+        remaining = [
+            item
+            for item in items
+            if item["active"] and item["id"] != matches[0]["id"] and item["project"]["slug"] == slug
+        ]
+        local_id = tokenstore.local_token_id(settings.home, slug)
+        should_remove = local_id == matches[0]["id"] or (local_id is None and not remaining)
+        if should_remove and tokenstore.remove(settings.home, slug):
+            console.print(f"[yellow]Token local removido:[/yellow] {slug}")
     finally:
         session.close()
 

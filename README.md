@@ -266,21 +266,30 @@ uv run envvault token create \
   --allow "pytest"
 ```
 
-O token aparece **uma única vez**. No ambiente do agente:
+Por padrão o valor **não é impresso**: ele é gravado em
+`~/.envvault/agent-tokens/meu-app.token` com permissões `0600` (diretório
+`0700`). Um arquivo por projeto — assim você roda comandos de **qualquer
+pasta**, sem exportar token e sem `cd`:
 
 ```bash
-export ENVVAULT_TOKEN=ev_...
+cd ~/HD_Repos
+envvault run -p meu-app -- npm run dev
+envvault keys -p meu-app -e dev      # nomes de chaves (nunca valores)
+envvault context -p meu-app          # escopo do token
 ```
 
-E o agente usa:
+O daemon executa o processo **dentro da pasta registrada do projeto**, mesmo
+que o seu shell esteja em outro diretório. Use `--cwd sub/dir` para descer a
+partir dela.
 
-```bash
-envvault context                 # mostra o escopo do token
-envvault keys -e dev             # lista nomes de chaves (nunca valores)
-envvault run -- pytest -q        # executa com injeção e saída redigida
-```
+Se quiser o valor bruto (outra máquina, outro agente), use `--no-save`; a CLI
+imprime o token uma única vez. `ENVVAULT_TOKEN` continua funcionando como
+override explícito e tem prioridade sobre o arquivo do projeto.
 
 Sem `--allow`, o token aceita qualquer argv. Restrinja sempre que possível.
+`envvault token list` mostra na coluna `local` qual token está salvo no disco, e
+`envvault token revoke` remove o arquivo quando ele corresponde ao token
+revogado.
 
 #### Requisição direta (Claude, scripts, integrações)
 
@@ -307,6 +316,11 @@ A resposta é um stream SSE (`start`, `output`, `exit`). O daemon:
 - roda o argv sem shell, com grupo de processos próprio;
 - redige qualquer segredo antes de enviar a saída;
 - encerra o grupo ao fim do `timeout_seconds`.
+
+O exemplo usa `ENVVAULT_TOKEN`. Com o token salvo em arquivo, prefira a CLI
+(`envvault run -p <projeto> -- ...`), que resolve o token sozinha; para chamar
+o HTTP direto, crie o token com `--no-save` e exporte o valor só naquele
+comando.
 
 Em `GET /v1/agent/context` o próprio token descreve o escopo, os limites e um
 exemplo de requisição — é o que a skill do segundo cérebro consulta.
@@ -342,14 +356,16 @@ envvault export --out .env.local  # gera arquivo temporário
 
 # execução
 envvault run -- <argv...>
-envvault run --env PORT=3001 --timeout 120 -- npm run dev
+envvault run -p app -- npm run dev          # de qualquer pasta
+envvault run -p app --env PORT=3001 --timeout 120 -- npm run dev
 
 # tokens
-envvault token create -n claude -p app -e dev --allow "npm run"
+envvault token create -n claude -p app -e dev --allow "npm run"   # salva 0600
+envvault token create -n claude -p app --no-save                   # imprime uma vez
 envvault token list
 envvault token revoke claude
-envvault context                   # escopo do token atual
-envvault keys -e dev               # nomes de chaves do token (agente)
+envvault context -p app            # escopo do token do projeto
+envvault keys -p app -e dev        # nomes de chaves (agente)
 
 # credenciais de serviços (globais ou por projeto)
 envvault credential add hostinger -c hosting -p meu-app

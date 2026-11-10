@@ -66,6 +66,11 @@ process group. `ENVVAULT_*` variables are stripped from the child env.
 - Browser sessions: `envvault_session` cookie (`HttpOnly`, `SameSite=Strict`) +
   `x-csrf-token` header on mutations. `Origin` and `Host` are validated.
 - Agent requests: `Authorization: Bearer ev_...`; token hash stored in SQLite.
+- The CLI keeps **one token file per project** in
+  `$ENVVAULT_HOME/agent-tokens/<slug>.token` (`0600` file, `0700` directory).
+  `ENVVAULT_TOKEN` overrides the file. Saving never prints the value; a file
+  with group/other permissions or a symlink is refused. This lets a shell at
+  the workspace root run any project with `-p` without exporting per project.
 - Idle timeout applies to both planes via `vault.enforce_idle`.
 - Locking clears the DEK, drops every session and terminates executions.
 
