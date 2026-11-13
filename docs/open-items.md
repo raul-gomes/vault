@@ -13,7 +13,7 @@ When done: tick `[x]`, write `DONE` and the commit.
 - [ ] **B4** Confirmar a limpeza quando o cliente desconecta antes do primeiro evento SSE (`src/envvault/services/runner.py:156`).
 
 ## Segurança
-- [ ] **S1** Documentar no README que o mesmo usuário lê `/proc/<pid>/environ` dos filhos e os arquivos de token. Avaliar daemon com usuário próprio e `hidepid`.
+- [x] **S1** Documentar no README que o mesmo usuário lê `/proc/<pid>/environ` dos filhos e os arquivos de token. Avaliar daemon com usuário próprio e `hidepid`. Documented in PR #10 (verified on Ubuntu with `ptrace_scope=1`).
 - [ ] **S2** Token sem `allowed_commands` aceita tudo. Decided: explicit list or `--any-command` (ADR 0003).
 - [ ] **S3** Auditoria com HMAC derivado da DEK e cabeça da cadeia em `meta` (`src/envvault/services/audit.py`).
 - [ ] **S4** Tempo máximo absoluto de desbloqueio, mesmo com agente ativo (`src/envvault/services/vault.py:178`).

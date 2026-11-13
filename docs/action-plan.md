@@ -21,7 +21,7 @@ Rules for every item:
 | 5 | **S2** explicit command list | A token needs at least one allowed command, or an explicit `--any-command`. Existing tokens without a list are rejected until recreated (ADR 0003). Recreate the `nacaopatina` token. | open |
 | 6 | **S4** absolute unlock limit | Lock after 12 h unlocked even with continuous use, killing running commands; configurable in the dashboard (ADR 0004). | open |
 | 7 | **S5** backup | `envvault backup <destination>`: consistent copy of the still-encrypted database (SQLite backup API), refuses to overwrite; restore steps in the README. No automatic backup. | open |
-| 8 | **S1** same-user boundary | Document in the README what an agent running as the same OS user can reach (`/proc/<pid>/environ`, token files) (ADR 0002). | open |
+| 8 | **S1** same-user boundary | Document in the README what an agent running as the same OS user can reach (`/proc/<pid>/environ`, token files) (ADR 0002). | in review (PR #10) |
 | 9 | **S3** keyed audit chain | HMAC with a key derived from the DEK; chain head and count stored in `meta`. | open |
 | 10 | **Translation** | One PR moving CLI, dashboard, API messages, README and docs to English (ADR 0005). | open |
 
