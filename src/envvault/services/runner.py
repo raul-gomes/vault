@@ -8,7 +8,6 @@ import queue
 import subprocess
 import threading
 import time
-import uuid
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -107,6 +106,7 @@ def validate_env(
 def spawn(
     state: Runtime,
     *,
+    exec_id: str,
     project: Project,
     environment: str,
     secrets: dict[str, str],
@@ -117,7 +117,11 @@ def spawn(
     extra_env: dict[str, str] | None = None,
     timeout_seconds: int | None = None,
 ) -> tuple[ExecRecord, Redactor]:
-    """Start the child with secrets in its environment and no ENVVAULT_* leak."""
+    """Start the child with secrets in its environment and no ENVVAULT_* leak.
+
+    ``exec_id`` must come from :meth:`Runtime.reserve_exec_slot`; the caller
+    releases the slot if this function raises.
+    """
     command = validate_command(command)
     extra_env = validate_env(extra_env, vault_keys=set(secrets))
     base_env = {key: value for key, value in os.environ.items() if not key.startswith("ENVVAULT_")}
@@ -139,7 +143,7 @@ def spawn(
     except OSError as exc:
         raise ExecError(f"could not start command: {exc.strerror}") from exc
     record = ExecRecord(
-        exec_id=uuid.uuid4().hex[:16],
+        exec_id=exec_id,
         process=process,
         actor_type=actor_type,
         actor_name=actor_name,
