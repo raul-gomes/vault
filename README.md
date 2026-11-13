@@ -278,9 +278,10 @@ envvault keys -p meu-app -e dev      # nomes de chaves (nunca valores)
 envvault context -p meu-app          # escopo do token
 ```
 
-O daemon executa o processo **dentro da pasta registrada do projeto**, mesmo
-que o seu shell esteja em outro diretório. Use `--cwd sub/dir` para descer a
-partir dela.
+O comando roda na pasta em que você está, se ela estiver dentro da pasta
+registrada do projeto (ex.: `admin/`). Chamado de fora do projeto, roda na raiz
+dele. `--cwd sub/dir` é sempre relativo à raiz do projeto; pasta fora do projeto
+é recusada.
 
 Se quiser o valor bruto (outra máquina, outro agente), use `--no-save`; a CLI
 imprime o token uma única vez. `ENVVAULT_TOKEN` continua funcionando como

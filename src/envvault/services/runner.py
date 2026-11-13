@@ -32,19 +32,39 @@ class ExecError(ValueError):
     """Raised for invalid commands or working directories."""
 
 
-def resolve_cwd(project: Project, requested: str | None) -> Path:
-    """Resolve a working directory and require it to stay inside the project."""
+def resolve_cwd(
+    project: Project, requested: str | None, *, invocation_dir: str | None = None
+) -> Path:
+    """Resolve the working directory, which must stay inside the project.
+
+    * ``requested`` (``--cwd``): relative paths are taken from the project path,
+      never from the daemon's own directory; outside the project is an error.
+    * ``invocation_dir`` (where the caller ran the CLI): used when no ``cwd``
+      was requested and it lies inside the project; otherwise the project root
+      is used, so a call from outside the project still works.
+    """
     base = Path(project.path).expanduser().resolve()
-    cwd = Path(requested).expanduser().resolve() if requested else base
-    if not cwd.is_relative_to(base):
-        raise ExecError(
-            f"cwd must be inside the registered project path ({base}); "
-            "update the project path in the dashboard or with "
-            "`envvault project update <slug> --path <pasta>`"
-        )
+    if requested:
+        cwd = _within(base, requested)
+        if cwd is None:
+            raise ExecError(
+                f"cwd must be inside the registered project path ({base}); "
+                "update the project path in the dashboard or with "
+                "`envvault project update <slug> --path <pasta>`"
+            )
+    elif invocation_dir:
+        cwd = _within(base, invocation_dir) or base
+    else:
+        cwd = base
     if not cwd.is_dir():
         raise ExecError(f"cwd does not exist: {cwd}")
     return cwd
+
+
+def _within(base: Path, candidate: str) -> Path | None:
+    """Resolve ``candidate`` against ``base``; ``None`` when it escapes ``base``."""
+    resolved = (base / Path(candidate).expanduser()).resolve()
+    return resolved if resolved.is_relative_to(base) else None
 
 
 def validate_command(command: list[str]) -> list[str]:

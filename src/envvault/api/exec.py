@@ -49,6 +49,7 @@ def exec_as_user(
         environment=payload.environment,
         command=payload.command,
         cwd=payload.cwd,
+        invocation_dir=payload.invocation_dir,
         env=payload.env,
         timeout_seconds=payload.timeout_seconds,
         actor_type="user",
@@ -74,7 +75,9 @@ def agent_context(
             "'env': {...}, 'timeout_seconds': ...}. The daemon injects the vault "
             "secrets, assembles the extra env vars and redacts the output; there is "
             "no endpoint that returns plaintext. Env keys already stored in the "
-            "vault cannot be overridden."
+            "vault cannot be overridden. 'cwd' is relative to the project root; "
+            "without it, 'invocation_dir' (the caller's directory) is used when it "
+            "is inside the project, else the project root."
         ),
         "request_example": {
             "environment": "dev",
@@ -143,6 +146,7 @@ def exec_as_agent(
         environment=payload.environment,
         command=payload.command,
         cwd=payload.cwd,
+        invocation_dir=payload.invocation_dir,
         env=payload.env,
         timeout_seconds=payload.timeout_seconds,
         actor_type="agent",
@@ -160,6 +164,7 @@ def _start_exec(
     environment: str,
     command: list[str],
     cwd: str | None,
+    invocation_dir: str | None,
     env: dict[str, str] | None,
     timeout_seconds: int | None,
     actor_type: str,
@@ -171,7 +176,7 @@ def _start_exec(
     The slot is reserved before anything is audited or started, so a request
     over the concurrency limit gets 429 and never creates a child process.
     """
-    resolved_cwd = runner.resolve_cwd(project, cwd)
+    resolved_cwd = runner.resolve_cwd(project, cwd, invocation_dir=invocation_dir)
     argv = runner.validate_command(command)
     values = secret_service.values_for_exec(db, state, project, environment)
     extra_env = runner.validate_env(env, vault_keys=set(values))

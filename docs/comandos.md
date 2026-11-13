@@ -54,7 +54,7 @@ comando? Atualize este arquivo no mesmo commit. Detalhes de uso no `README.md`.
 | --- | --- |
 | `envvault run -p <slug> -- <comando>` | Rodar com os segredos injetados e a saída redigida. |
 | `envvault run -p <slug> --env PORT=3001 --timeout 120 -- <comando>` | Variável extra não secreta e limite de tempo. |
-| `envvault run -p <slug> --cwd <pasta absoluta> -- <comando>` | Rodar numa subpasta (use caminho absoluto: ver pendência B1). |
+| `envvault run -p <slug> --cwd <subpasta> -- <comando>` | Rodar numa subpasta, relativa à raiz do projeto. Sem `--cwd`, roda na pasta atual se ela estiver dentro do projeto; senão, na raiz. |
 
 ## Tokens de agente
 

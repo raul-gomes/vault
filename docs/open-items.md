@@ -7,7 +7,7 @@ When done: tick `[x]`, write `DONE` and the commit.
 - [ ] **S6** `~/.envvault/daemon.log` is `0664` (group/other readable). Plan item 2.
 
 ## Bugs (teste de regressão primeiro)
-- [ ] **B1** `cwd` relativo resolvido contra a pasta do daemon (`src/envvault/services/runner.py:39`). Resolver relativo à pasta do projeto; a CLI deve mandar o `cwd` atual quando ele estiver dentro do projeto (`src/envvault/cli.py:788`).
+- [x] **B1** `cwd` relativo resolvido contra a pasta do daemon (`src/envvault/services/runner.py:39`). Resolver relativo à pasta do projeto; a CLI deve mandar o `cwd` atual quando ele estiver dentro do projeto (`src/envvault/cli.py:788`). Fixed in PR #5.
 - [ ] **B2** Filtro de comandos por prefixo de texto (`src/envvault/services/tokens.py:150`). Comparar elemento a elemento do argv.
 - [x] **B3** Processo órfão quando estoura o limite de execuções: `Popen` antes de `add_exec` (`src/envvault/services/runner.py:129`/`152`). Reservar a vaga antes de iniciar e mapear o erro para 429. Fixed in PR #2.
 - [ ] **B4** Confirmar a limpeza quando o cliente desconecta antes do primeiro evento SSE (`src/envvault/services/runner.py:156`).

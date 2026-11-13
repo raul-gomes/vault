@@ -755,7 +755,9 @@ def run(
     ctx: typer.Context,
     project: str | None = typer.Option(None, "--project", "-p"),
     environment: str | None = typer.Option(None, "--environment", "-e"),
-    cwd: str | None = typer.Option(None, "--cwd", help="Diretório de execução"),
+    cwd: str | None = typer.Option(
+        None, "--cwd", help="Diretório de execução, relativo à pasta do projeto"
+    ),
     env: list[str] = typer.Option(
         [], "--env", "-E", help="Variável extra KEY=VALOR (repetível, não sobrescreve segredo)"
     ),
@@ -786,6 +788,7 @@ def run(
                     "environment": env_name,
                     "command": command,
                     "cwd": cwd,
+                    "invocation_dir": os.getcwd(),
                     "env": overrides,
                     "timeout_seconds": timeout,
                 },
@@ -805,6 +808,7 @@ def run(
                     "environment": env_name,
                     "command": command,
                     "cwd": cwd,
+                    "invocation_dir": os.getcwd(),
                     "env": overrides,
                     "timeout_seconds": timeout,
                 },
