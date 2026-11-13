@@ -26,7 +26,7 @@ When done: tick `[x]`, write `DONE` and the commit.
 - [ ] **Q4** Tornar pública `_terminate_process_group` e importar no topo de `runner.py`.
 - [ ] **Q5** Decided: everything in English (ADR 0005); fix AGENTS.md in the translation PR.
 - [ ] **Q6** Trocar `httpx` por `httpx2` nos testes (aviso do Starlette).
-- [ ] **Q7** `LICENSE` file (MIT confirmed by the owner).
+- [x] **Q7** `LICENSE` file (MIT). DONE.
 - [ ] **Q8** Smoke test de UI dentro do repo ou tirar a menção do `AGENTS.md`.
 
 ## Processo
