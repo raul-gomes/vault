@@ -383,6 +383,33 @@ envvault generate -l 48 --count 5
 
 ---
 
+### Backup e restauração
+
+```bash
+envvault backup ~/Backups/                 # cria envvault-backup-<data>.db (0600)
+envvault backup /media/hd/vault-nov.db     # ou um arquivo novo (nunca sobrescreve)
+```
+
+O backup é uma cópia consistente do banco **ainda cifrado** (API de backup do
+SQLite): não precisa do daemon nem da passphrase e pode ir para um disco externo
+ou nuvem. Ele só abre com a passphrase **que estava em uso na hora do backup**;
+se você trocar a passphrase depois, guarde a antiga junto com aquele backup ou
+faça um backup novo. Sem a passphrase não há recuperação, por desenho.
+
+Restaurar:
+
+```bash
+envvault stop
+mv ~/.envvault/vault.db ~/.envvault/vault.db.old    # guarde até conferir
+cp /media/hd/vault-nov.db ~/.envvault/vault.db
+chmod 600 ~/.envvault/vault.db
+envvault unlock                                     # passphrase da época do backup
+envvault verify                                     # confere a auditoria
+```
+
+Os tokens de agente em `~/.envvault/agent-tokens/` não entram no backup: depois
+de restaurar, recrie os que foram criados após a data do backup.
+
 ## 5. `.envvault.toml`
 
 Arquivo versionável, **sem segredos**:

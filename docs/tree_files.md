@@ -43,6 +43,7 @@ src/envvault/
     tokens.py                Criar, listar e revogar tokens
   services/
     audit.py                 Cadeia de hash append-only
+    backup.py                Cópia consistente do banco cifrado (envvault backup)
     credentials.py           Credenciais cifradas (globais ou por projeto)
     envfile.py               Parser/gerador de .env
     projects.py              Projetos e ambientes

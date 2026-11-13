@@ -71,6 +71,12 @@ comando? Atualize este arquivo no mesmo commit. Detalhes de uso no `README.md`.
 | `envvault credential add` / `list` / `update` / `remove` | Logins de hosting, DNS, e-mail (globais ou por projeto). |
 | `envvault credential show <nome>` | Ver os campos (auditado). Só humano. |
 
+## Backup
+
+| Comando | Quando usar |
+| --- | --- |
+| `envvault backup <pasta-ou-arquivo>` | Cópia do banco ainda cifrado (`0600`, nunca sobrescreve). Restauração no README. |
+
 ## Auditoria
 
 | Comando | Quando usar |

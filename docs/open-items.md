@@ -17,7 +17,7 @@ When done: tick `[x]`, write `DONE` and the commit.
 - [ ] **S2** Token sem `allowed_commands` aceita tudo. Decided: explicit list or `--any-command` (ADR 0003).
 - [ ] **S3** Auditoria com HMAC derivado da DEK e cabeça da cadeia em `meta` (`src/envvault/services/audit.py`).
 - [ ] **S4** Tempo máximo absoluto de desbloqueio, mesmo com agente ativo (`src/envvault/services/vault.py:178`).
-- [ ] **S5** `envvault backup` + passo a passo de restauração.
+- [x] **S5** `envvault backup` + passo a passo de restauração. Done in PR #9.
 
 ## Qualidade
 - [ ] **Q1** Cobertura 73% → 90% com piso no CI (`cli.py` 20%, `daemon.py` 0%).
