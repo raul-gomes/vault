@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -24,6 +23,9 @@ META_KDF = "kdf"
 META_DEK_WRAPPED = "dek_wrapped"
 META_DEK_NONCE = "dek_nonce"
 META_LOCK_TIMEOUT = "lock_timeout_minutes"
+META_MAX_UNLOCK_HOURS = "max_unlock_hours"
+SECONDS_PER_MINUTE = 60
+SECONDS_PER_HOUR = 3600
 META_CREATED_AT = "created_at"
 
 
@@ -34,6 +36,7 @@ class VaultStatus:
     initialized: bool
     unlocked: bool
     lock_timeout_minutes: int
+    max_unlock_hours: int
 
 
 def get_meta(db: Session, key: str) -> str | None:
@@ -74,6 +77,12 @@ def timeout_minutes(db: Session, settings: Settings) -> int:
     """Effective idle-lock timeout, from metadata with a settings fallback."""
     raw = get_meta(db, META_LOCK_TIMEOUT)
     return int(raw) if raw else settings.lock_timeout_minutes
+
+
+def max_unlock_hours(db: Session, settings: Settings) -> int:
+    """Effective absolute unlock limit, from metadata with a settings fallback."""
+    raw = get_meta(db, META_MAX_UNLOCK_HOURS)
+    return int(raw) if raw else settings.max_unlock_hours
 
 
 def initialize(db: Session, settings: Settings, passphrase: str) -> bytes:
@@ -131,7 +140,7 @@ def unlock(db: Session, state: Runtime, passphrase: str, client: str) -> None:
             action="vault.unlock",
             result="denied",
             detail={"client": client},
-            lock=state.lock,
+            state=state,
         )
         db.commit()
         raise
@@ -144,7 +153,7 @@ def unlock(db: Session, state: Runtime, passphrase: str, client: str) -> None:
         action="vault.unlock",
         result="ok",
         detail={"client": client},
-        lock=state.lock,
+        state=state,
     )
     db.commit()
 
@@ -170,36 +179,61 @@ def lock(db: Session, state: Runtime, actor_type: str = "user", actor_name: str 
         actor_type=actor_type,
         actor_name=actor_name,
         action="vault.lock",
-        lock=state.lock,
+        state=state,
     )
     db.commit()
 
 
 def enforce_idle(db: Session, settings: Settings, state: Runtime) -> None:
-    """Lock the vault if the idle timeout elapsed, then require unlocked state."""
+    """Apply the idle and absolute limits, then require unlocked state.
+
+    Called on every authenticated request; a request that finds the vault
+    within its limits counts as activity.
+    """
     if state.dek is None:
         raise LockedError("vault is locked")
-    timeout = timeout_minutes(db, settings) * 60
-    last = state.last_activity
-    if last is None or time.monotonic() - last > timeout:
+    reason = _expired(db, settings, state)
+    if reason is not None:
         lock(db, state, actor_type="system", actor_name="system")
-        raise LockedError("vault locked after inactivity")
+        raise LockedError(reason)
     state.touch()
+
+
+def enforce_limits(db: Session, settings: Settings, state: Runtime) -> bool:
+    """Lock the vault when a limit expired, without counting as activity.
+
+    Used by the daemon watchdog so limits apply even with no requests (a
+    long-running command would otherwise keep its secrets indefinitely).
+    Returns whether the vault was locked by this call.
+    """
+    if state.dek is None:
+        return False
+    if _expired(db, settings, state) is None:
+        return False
+    lock(db, state, actor_type="system", actor_name="system")
+    return True
+
+
+def _expired(db: Session, settings: Settings, state: Runtime) -> str | None:
+    """Return why the unlocked vault must lock now, or ``None``."""
+    now = state.clock()
+    last = state.last_activity
+    if last is None or now - last > timeout_minutes(db, settings) * SECONDS_PER_MINUTE:
+        return "vault locked after inactivity"
+    started = state.unlocked_at
+    if started is None or now - started > max_unlock_hours(db, settings) * SECONDS_PER_HOUR:
+        return "vault locked after the maximum unlock time; unlock it again"
+    return None
 
 
 def status(db: Session, settings: Settings, state: Runtime) -> VaultStatus:
     """Return the current status without exposing key material."""
-    unlocked = state.dek is not None
-    if (
-        unlocked
-        and state.last_activity is not None
-        and time.monotonic() - state.last_activity > timeout_minutes(db, settings) * 60
-    ):
-        unlocked = False
+    unlocked = state.dek is not None and _expired(db, settings, state) is None
     return VaultStatus(
         initialized=is_initialized(db),
         unlocked=unlocked,
         lock_timeout_minutes=timeout_minutes(db, settings),
+        max_unlock_hours=max_unlock_hours(db, settings),
     )
 
 
@@ -246,6 +280,6 @@ def change_passphrase(db: Session, state: Runtime, current: str, new: str, *, cl
         actor_type="user",
         actor_name="user",
         action="vault.passphrase.change",
-        lock=state.lock,
+        state=state,
     )
     db.commit()

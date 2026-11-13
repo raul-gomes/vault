@@ -278,15 +278,19 @@ envvault keys -p meu-app -e dev      # nomes de chaves (nunca valores)
 envvault context -p meu-app          # escopo do token
 ```
 
-O daemon executa o processo **dentro da pasta registrada do projeto**, mesmo
-que o seu shell esteja em outro diretório. Use `--cwd sub/dir` para descer a
-partir dela.
+O comando roda na pasta em que você está, se ela estiver dentro da pasta
+registrada do projeto (ex.: `admin/`). Chamado de fora do projeto, roda na raiz
+dele. `--cwd sub/dir` é sempre relativo à raiz do projeto; pasta fora do projeto
+é recusada.
 
 Se quiser o valor bruto (outra máquina, outro agente), use `--no-save`; a CLI
 imprime o token uma única vez. `ENVVAULT_TOKEN` continua funcionando como
 override explícito e tem prioridade sobre o arquivo do projeto.
 
-Sem `--allow`, o token aceita qualquer argv. Restrinja sempre que possível.
+Todo token que executa precisa de pelo menos um `--allow` (comparado palavra por
+palavra: `--allow "npm run"` libera `npm run dev`, mas não `npm run-script`).
+Para liberar tudo, use `--any-command` de propósito. Tokens antigos sem lista
+são recusados: recrie-os (ADR 0003).
 `envvault token list` mostra na coluna `local` qual token está salvo no disco, e
 `envvault token revoke` remove o arquivo quando ele corresponde ao token
 revogado.
@@ -361,7 +365,7 @@ envvault run -p app --env PORT=3001 --timeout 120 -- npm run dev
 
 # tokens
 envvault token create -n claude -p app -e dev --allow "npm run"   # salva 0600
-envvault token create -n claude -p app --no-save                   # imprime uma vez
+envvault token create -n claude -p app --allow pytest --no-save    # imprime uma vez
 envvault token list
 envvault token revoke claude
 envvault context -p app            # escopo do token do projeto
@@ -382,6 +386,33 @@ envvault generate -l 48 --count 5
 ```
 
 ---
+
+### Backup e restauração
+
+```bash
+envvault backup ~/Backups/                 # cria envvault-backup-<data>.db (0600)
+envvault backup /media/hd/vault-nov.db     # ou um arquivo novo (nunca sobrescreve)
+```
+
+O backup é uma cópia consistente do banco **ainda cifrado** (API de backup do
+SQLite): não precisa do daemon nem da passphrase e pode ir para um disco externo
+ou nuvem. Ele só abre com a passphrase **que estava em uso na hora do backup**;
+se você trocar a passphrase depois, guarde a antiga junto com aquele backup ou
+faça um backup novo. Sem a passphrase não há recuperação, por desenho.
+
+Restaurar:
+
+```bash
+envvault stop
+mv ~/.envvault/vault.db ~/.envvault/vault.db.old    # guarde até conferir
+cp /media/hd/vault-nov.db ~/.envvault/vault.db
+chmod 600 ~/.envvault/vault.db
+envvault unlock                                     # passphrase da época do backup
+envvault verify                                     # confere a auditoria
+```
+
+Os tokens de agente em `~/.envvault/agent-tokens/` não entram no backup: depois
+de restaurar, recrie os que foram criados após a data do backup.
 
 ## 5. `.envvault.toml`
 
@@ -466,6 +497,7 @@ Regras de segurança:
 | `ENVVAULT_HOST` | `127.0.0.1` | bind do daemon |
 | `ENVVAULT_PORT` | `8787` | porta |
 | `ENVVAULT_LOCK_TIMEOUT_MINUTES` | `30` | bloqueio por inatividade |
+| `ENVVAULT_MAX_UNLOCK_HOURS` | `12` | bloqueio absoluto, mesmo com uso contínuo (ADR 0004) |
 | `ENVVAULT_SESSION_IDLE_MINUTES` | `30` | validade da sessão |
 | `ENVVAULT_MAX_EXECS` | `8` | execuções simultâneas |
 | `ENVVAULT_KDF_TIME_COST` | `3` | custo do Argon2id |
@@ -480,12 +512,24 @@ Regras de segurança:
 - leitura do banco sem a passphrase;
 - vazamento acidental em logs/build/conversa (redação);
 - exposição de credenciais de serviços em listagens (só o reveal auditado as mostra);
-- adulteração silenciosa do log (cadeia de hash);
+- adulteração silenciosa do log: a cadeia usa HMAC com chave derivada da DEK e a
+  última entrada fica fixada, então reescrever ou apagar o fim exige a passphrase;
 - CSRF, DNS rebinding e uso do dashboard por outra origem;
-- sessão esquecida (bloqueio por inatividade).
+- sessão esquecida (bloqueio por inatividade e bloqueio absoluto de 12 h, aplicados
+  também sem requisições, encerrando comandos em execução).
 
-**Não protege contra:**
-- processo local do mesmo usuário lendo a memória do daemon;
+**Não protege contra** (decisão registrada no ADR 0002):
+- **qualquer processo do mesmo usuário do sistema**, inclusive um agente com shell.
+  O daemon roda com o seu usuário, então esse processo consegue:
+  - ler `/proc/<pid>/environ` de qualquer comando que o daemon iniciou e ver os
+    segredos injetados enquanto ele roda;
+  - ler os tokens de **todos** os projetos em `~/.envvault/agent-tokens/`;
+  - ler a memória do daemon.
+  A redação evita vazamento **acidental** (log, build, conversa com o agente);
+  ela não segura um agente que queira o valor de propósito. Para reduzir o
+  estrago: tokens com lista de comandos (ADR 0003), bloqueio absoluto de 12 h
+  (ADR 0004) e auditoria. Isolamento real exigiria rodar o daemon e os comandos
+  com outro usuário do sistema, o que não está planejado;
 - comando **deliberadamente malicioso** autorizado pelo token — ele recebe as
   variáveis e pode codificá-las/exfiltrá-las de formas que a redação textual não
   acompanha;
@@ -495,7 +539,7 @@ Regras de segurança:
 **Limitações conhecidas:**
 - valores com menos de 6 caracteres não são redigidos;
 - transformações arbitrárias (hash, cifra, split) não são detectadas;
-- token sem `allowed_commands` aceita qualquer argv, inclusive
+- token criado com `--any-command` aceita qualquer argv, inclusive
   `python3 -c "import os; …"`;
 - SQLite não é um cofre de hardware — a proteção em repouso depende da
   passphrase.
@@ -509,6 +553,7 @@ Regras de segurança:
 | `daemon não está rodando` | daemon parado | `envvault serve` (primeiro plano) ou `envvault init` |
 | `não autenticado` | sessão expirada | rode o comando de novo e informe a passphrase |
 | `vault bloqueado; …` | inatividade | `envvault unlock` |
+| `vault locked after the maximum unlock time` | 12 h desde o desbloqueio | `envvault unlock` |
 | `informe --project` | fora de um diretório com `.envvault.toml` | `envvault link …` ou passe `--project` |
 | `projeto não encontrado: X` | projeto não registrado | `envvault project add X --path .` |
 | `arquivo não encontrado: .env` | não há `.env` no diretório | rode no diretório certo ou crie o `.env` |

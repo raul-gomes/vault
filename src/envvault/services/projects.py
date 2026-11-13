@@ -66,7 +66,7 @@ def create(
         action="project.create",
         project_slug=project.slug,
         detail={"path": str(resolved)},
-        lock=state.lock,
+        state=state,
     )
     db.commit()
     return project
@@ -114,7 +114,7 @@ def update(
         actor_name=actor_name,
         action="project.update",
         project_slug=project.slug,
-        lock=state.lock,
+        state=state,
     )
     db.commit()
     return project
@@ -137,7 +137,7 @@ def delete(
         actor_name=actor_name,
         action="project.delete",
         project_slug=slug,
-        lock=state.lock,
+        state=state,
     )
     db.commit()
 
@@ -214,7 +214,7 @@ def create_environment(
         action="environment.create",
         project_slug=project.slug,
         environment=name,
-        lock=state.lock,
+        state=state,
     )
     db.commit()
     return row, True
@@ -251,6 +251,6 @@ def delete_environment(
         action="environment.delete",
         project_slug=project.slug,
         environment=name,
-        lock=state.lock,
+        state=state,
     )
     db.commit()

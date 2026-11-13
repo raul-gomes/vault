@@ -436,7 +436,7 @@ async function renderOverview() {
       el("dt", {}, "Banco"),
       el("dd", {}, data.paths.database),
       el("dt", {}, "Timeout"),
-      el("dd", {}, `${status.lock_timeout_minutes} min de inatividade`),
+      el("dd", {}, `${status.lock_timeout_minutes} min de inatividade · máximo ${status.max_unlock_hours} h desbloqueado`),
       el("dt", {}, "Versão"),
       el("dd", {}, data.version),
     ),
@@ -1644,9 +1644,11 @@ async function renderTokens() {
       token.can_list ? "listar" : null,
       token.can_inject ? "executar" : null,
     ].filter(Boolean).join(" · "),
-    token.allowed_commands.length
-      ? el("span", { class: "mono muted" }, token.allowed_commands.join(", "))
-      : el("span", { class: "badge warn" }, "qualquer comando"),
+    token.any_command
+      ? el("span", { class: "badge warn" }, "qualquer comando")
+      : token.allowed_commands.length
+        ? el("span", { class: "mono muted" }, token.allowed_commands.join(", "))
+        : el("span", { class: "badge err" }, token.can_inject ? "recriar (sem comandos)" : "—"),
     fmtDate(token.last_used_at),
     badge(token.active ? "ativo" : "revogado", token.active ? "ok" : "err"),
     token.active
@@ -1697,6 +1699,7 @@ function openTokenDialog() {
   const environments = el("input", { value: "dev", placeholder: "dev, staging" });
   const canList = el("input", { type: "checkbox", checked: true });
   const canInject = el("input", { type: "checkbox", checked: true });
+  const anyCommand = el("input", { type: "checkbox" });
   const commands = el("textarea", {
     rows: "4",
     placeholder: "npm run dev\npytest\ndocker compose up",
@@ -1725,10 +1728,11 @@ function openTokenDialog() {
     el(
       "div",
       { class: "field" },
-      el("label", {}, "Prefixos de comando permitidos (um por linha; vazio = qualquer)"),
+      el("label", {}, "Comandos permitidos (um por linha, comparados palavra por palavra)"),
       commands,
     ),
-    el("p", { class: "note" }, "Sem prefixos, o token pode executar qualquer argv — inclusive programas que imprimem o ambiente. A redação é a última linha de defesa, não a única."),
+    el("label", { class: "field-inline" }, anyCommand, "Permitir qualquer comando (não recomendado)"),
+    el("p", { class: "note" }, "Com \"qualquer comando\", o token pode executar qualquer argv — inclusive programas que imprimem o ambiente. A redação é a última linha de defesa, não a única."),
   );
   openModal({
     title: "Novo token de agente",
@@ -1747,6 +1751,18 @@ function openTokenDialog() {
         toast("O token precisa de ao menos uma permissão", "error");
         return false;
       }
+      const allowed = commands.value
+        .split("\n")
+        .map((item) => item.trim())
+        .filter(Boolean);
+      if (canInject.checked && !allowed.length && !anyCommand.checked) {
+        toast("Informe ao menos um comando ou marque \"qualquer comando\"", "error");
+        return false;
+      }
+      if (anyCommand.checked && allowed.length) {
+        toast("Escolha uma lista de comandos ou \"qualquer comando\", não os dois", "error");
+        return false;
+      }
       const result = await api("/v1/tokens", {
         method: "POST",
         body: {
@@ -1755,10 +1771,8 @@ function openTokenDialog() {
           environments: envs,
           can_list: canList.checked,
           can_inject: canInject.checked,
-          allowed_commands: commands.value
-            .split("\n")
-            .map((item) => item.trim())
-            .filter(Boolean),
+          allowed_commands: allowed,
+          any_command: anyCommand.checked,
         },
       });
       setTimeout(() => showTokenCreated(result), 120);
@@ -1893,10 +1907,14 @@ async function renderSettings() {
   ]);
   const data = await api("/v1/settings");
   const timeout = el("input", { type: "number", min: "1", max: "1440", value: String(data.lock_timeout_minutes), style: "max-width:140px" });
+  const maxUnlock = el("input", { type: "number", min: "1", max: "168", value: String(data.max_unlock_hours), style: "max-width:140px" });
   const saveTimeout = el("button", { class: "btn primary", type: "button" }, "Salvar");
   saveTimeout.addEventListener("click", async () => {
     try {
-      await api("/v1/settings", { method: "PUT", body: { lock_timeout_minutes: Number(timeout.value) } });
+      await api("/v1/settings", {
+        method: "PUT",
+        body: { lock_timeout_minutes: Number(timeout.value), max_unlock_hours: Number(maxUnlock.value) },
+      });
       toast("Timeout atualizado");
       await renderSettings();
     } catch (error) {
@@ -1936,8 +1954,9 @@ async function renderSettings() {
     el(
       "div",
       { class: "grid", style: "grid-template-columns: 1fr 1fr" },
-      section("Bloqueio por inatividade", [
+      section("Bloqueio automático", [
         el("div", { class: "field" }, el("label", {}, "Minutos até bloquear"), timeout),
+        el("div", { class: "field" }, el("label", {}, "Máximo de horas desbloqueado (mesmo em uso)"), maxUnlock),
         el("div", { class: "row" }, saveTimeout),
         el("p", { class: "muted" }, "Ao bloquear, a chave sai da memória, sessões caem e processos em execução são encerrados."),
       ]),

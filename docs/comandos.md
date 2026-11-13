@@ -54,13 +54,14 @@ comando? Atualize este arquivo no mesmo commit. Detalhes de uso no `README.md`.
 | --- | --- |
 | `envvault run -p <slug> -- <comando>` | Rodar com os segredos injetados e a saída redigida. |
 | `envvault run -p <slug> --env PORT=3001 --timeout 120 -- <comando>` | Variável extra não secreta e limite de tempo. |
-| `envvault run -p <slug> --cwd <pasta absoluta> -- <comando>` | Rodar numa subpasta (use caminho absoluto: ver pendência B1). |
+| `envvault run -p <slug> --cwd <subpasta> -- <comando>` | Rodar numa subpasta, relativa à raiz do projeto. Sem `--cwd`, roda na pasta atual se ela estiver dentro do projeto; senão, na raiz. |
 
 ## Tokens de agente
 
 | Comando | Quando usar |
 | --- | --- |
-| `envvault token create -p <slug>` | Criar token (salvo em `~/.envvault/agent-tokens/<slug>.token`, `0600`). Prefira restringir os comandos. |
+| `envvault token create -n <nome> -p <slug> --allow "npm run" --allow pytest` | Criar token (salvo em `~/.envvault/agent-tokens/<slug>.token`, `0600`). Pelo menos um `--allow`, comparado palavra por palavra. |
+| `envvault token create -n <nome> -p <slug> --any-command` | Token que aceita qualquer comando (escolha explícita, não recomendada). |
 | `envvault token list` / `envvault token revoke <nome>` | Listar / revogar. |
 | `envvault context -p <slug>` / `envvault keys -p <slug>` | O que o token pode fazer / nomes das chaves. |
 
@@ -70,6 +71,12 @@ comando? Atualize este arquivo no mesmo commit. Detalhes de uso no `README.md`.
 | --- | --- |
 | `envvault credential add` / `list` / `update` / `remove` | Logins de hosting, DNS, e-mail (globais ou por projeto). |
 | `envvault credential show <nome>` | Ver os campos (auditado). Só humano. |
+
+## Backup
+
+| Comando | Quando usar |
+| --- | --- |
+| `envvault backup <pasta-ou-arquivo>` | Cópia do banco ainda cifrado (`0600`, nunca sobrescreve). Restauração no README. |
 
 ## Auditoria
 

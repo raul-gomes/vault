@@ -1,6 +1,6 @@
 # Lineage do banco (SQLite)
 
-Atualizado em 2026-11-13 (revisão `0003`). Referência rápida; a fonte da verdade
+Atualizado em 2026-11-13 (revisão `0005`). Referência rápida; a fonte da verdade
 é `src/envvault/models.py` + `src/envvault/migrations/versions/`.
 
 Banco: `~/.envvault/vault.db` (ou `$ENVVAULT_HOME/vault.db`), `0600`, WAL,
@@ -15,8 +15,8 @@ Banco: `~/.envvault/vault.db` (ou `$ENVVAULT_HOME/vault.db`), `0600`, WAL,
 | `environments` | Ambientes de um projeto (existem mesmo sem segredo) | `id`, `project_id` → `projects` (CASCADE), `name`; único (`project_id`, `name`) | — |
 | `secrets` | Variáveis de ambiente | `id`, `project_id` → `projects` (CASCADE), `environment`, `key`, `version`, datas; único (`project_id`, `environment`, `key`) | `nonce` + `ciphertext` (AES-256-GCM; AAD `projeto:ambiente:chave:versão`) |
 | `credentials` | Logins de serviços (hosting, DNS, e-mail…) | `id`, `project_id` → `projects` (CASCADE, **nulo = global**), `name`, `category`, `version`, datas | `nonce` + `ciphertext` (JSON com os demais campos; AAD `id:versão`) |
-| `api_tokens` | Tokens de agente | `id`, `name`, `token_hash` (SHA-256, único), `prefix`, `project_id` → `projects` (CASCADE), `environments` (JSON), `can_list`, `can_inject`, `allowed_commands` (JSON), `created_at`, `last_used_at`, `revoked_at` | — (o valor do token nunca é guardado) |
-| `audit_log` | Auditoria append-only | `id` (autoinc), `ts`, `actor_type`, `actor_name`, `action`, `project_slug`, `environment`, `key_names` (JSON), `command`, `result`, `detail` (JSON), `prev_hash`, `hash` | — (nunca contém valores) |
+| `api_tokens` | Tokens de agente | `id`, `name`, `token_hash` (SHA-256, único), `prefix`, `project_id` → `projects` (CASCADE), `environments` (JSON), `can_list`, `can_inject`, `allowed_commands` (JSON), `any_command` (bool, escolha explícita; sem lista e sem ele o token é recusado), `created_at`, `last_used_at`, `revoked_at` | — (o valor do token nunca é guardado) |
+| `audit_log` | Auditoria append-only | `id` (autoinc), `ts`, `actor_type`, `actor_name`, `action`, `project_slug`, `environment`, `key_names` (JSON), `command`, `result`, `detail` (JSON), `prev_hash`, `hash`, `mac` (`hmac` com chave derivada da DEK; `sha256` só para desbloqueio negado antes de existir chave; `legacy` = antes da `0005`) | — (nunca contém valores) |
 
 ## Chaves de `meta`
 
@@ -25,14 +25,16 @@ Banco: `~/.envvault/vault.db` (ou `$ENVVAULT_HOME/vault.db`), `0600`, WAL,
 | `kdf` | Parâmetros do Argon2id (salt, tempo, memória, paralelismo) |
 | `dek_wrapped` / `dek_nonce` | DEK cifrada pela KEK derivada da passphrase |
 | `lock_timeout_minutes` | Bloqueio por inatividade configurado no painel |
+| `max_unlock_hours` | Bloqueio absoluto em horas (padrão 12; ausente = `ENVVAULT_MAX_UNLOCK_HOURS`) |
 | `created_at` | Data de criação do cofre |
+| `audit_head` | Última entrada com HMAC (`id`, `hash`) + tag HMAC: detecta apagar o fim da auditoria |
 
 ## Regras
 
 - `version` sobe a cada escrita de segredo/credencial e entra no AAD (ciphertext antigo não pode voltar).
 - Apagar um projeto apaga ambientes, segredos, tokens e credenciais dele; credenciais globais ficam.
 - Ambiente só pode ser apagado vazio.
-- `audit_log` nunca recebe UPDATE/DELETE.
+- `audit_log` nunca recebe UPDATE/DELETE. Reescrever ou truncar a cadeia exige a DEK (HMAC + `audit_head`).
 
 ## Migrations e origem do schema
 
@@ -41,3 +43,5 @@ Banco: `~/.envvault/vault.db` (ou `$ENVVAULT_HOME/vault.db`), `0600`, WAL,
 | `0001` | `0001_initial.py` | `meta`, `projects`, `secrets`, `api_tokens`, `audit_log` e índices |
 | `0002` | `0002_environments.py` | `environments` (ambientes viram linhas; preenche a partir de `secrets`) |
 | `0003` | `0003_credentials.py` | `credentials` e índices por projeto, nome e categoria |
+| `0004` | `0004_token_any_command.py` | `api_tokens.any_command` (padrão falso: token antigo sem lista para de funcionar) |
+| `0005` | `0005_audit_mac.py` | `audit_log.mac` (entradas antigas viram `legacy`) |

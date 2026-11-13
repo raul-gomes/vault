@@ -31,6 +31,7 @@ from envvault.passwords import (
     generate_password,
 )
 from envvault.services import vault
+from envvault.services.backup import BackupError, create_backup
 
 app = typer.Typer(
     add_completion=False,
@@ -131,7 +132,7 @@ def ensure_daemon(settings: Settings) -> None:
     if _health(settings) is not None:
         return
     settings.ensure_home()
-    log = settings.log_path.open("ab", buffering=0)
+    log = settings.open_log()
     subprocess.Popen(
         [sys.executable, "-m", "envvault.daemon"],
         stdin=subprocess.DEVNULL,
@@ -755,7 +756,9 @@ def run(
     ctx: typer.Context,
     project: str | None = typer.Option(None, "--project", "-p"),
     environment: str | None = typer.Option(None, "--environment", "-e"),
-    cwd: str | None = typer.Option(None, "--cwd", help="Diretório de execução"),
+    cwd: str | None = typer.Option(
+        None, "--cwd", help="Diretório de execução, relativo à pasta do projeto"
+    ),
     env: list[str] = typer.Option(
         [], "--env", "-E", help="Variável extra KEY=VALOR (repetível, não sobrescreve segredo)"
     ),
@@ -786,6 +789,7 @@ def run(
                     "environment": env_name,
                     "command": command,
                     "cwd": cwd,
+                    "invocation_dir": os.getcwd(),
                     "env": overrides,
                     "timeout_seconds": timeout,
                 },
@@ -805,6 +809,7 @@ def run(
                     "environment": env_name,
                     "command": command,
                     "cwd": cwd,
+                    "invocation_dir": os.getcwd(),
                     "env": overrides,
                     "timeout_seconds": timeout,
                 },
@@ -879,7 +884,12 @@ def token_create(
     environment: list[str] = typer.Option(
         ["dev"], "--environment", "-e", help="Ambiente permitido (repetível)"
     ),
-    allow: list[str] = typer.Option([], "--allow", help="Prefixo de comando permitido (repetível)"),
+    allow: list[str] = typer.Option(
+        [], "--allow", help="Comando permitido, comparado palavra por palavra (repetível)"
+    ),
+    any_command: bool = typer.Option(
+        False, "--any-command", help="Permitir qualquer comando (não recomendado)"
+    ),
     no_list: bool = typer.Option(False, "--no-list", help="Não permitir listar chaves"),
     no_inject: bool = typer.Option(False, "--no-inject", help="Não permitir execução"),
     save: bool = typer.Option(
@@ -889,6 +899,10 @@ def token_create(
     ),
 ) -> None:
     """Cria um token de agente e, por padrão, salva em um arquivo 0600."""
+    if not no_inject and not allow and not any_command:
+        _fail('informe ao menos um --allow "<comando>" ou, se for mesmo o caso, --any-command')
+    if allow and any_command:
+        _fail("use --allow ou --any-command, não os dois")
     settings = Settings.from_env()
     session = _login(settings)
     try:
@@ -903,6 +917,7 @@ def token_create(
                 "can_list": not no_list,
                 "can_inject": not no_inject,
                 "allowed_commands": allow,
+                "any_command": any_command,
             },
         )
         created = response.json()
@@ -932,9 +947,9 @@ def token_create(
             console.print(f"  export ENVVAULT_TOKEN={raw}")
         if allow:
             console.print(f"Comandos permitidos: {', '.join(allow)}")
-        else:
+        elif any_command:
             console.print(
-                "[yellow]Sem restrição de comando; qualquer argv é aceito para este token.[/yellow]"
+                "[yellow]Qualquer comando é aceito para este token (--any-command).[/yellow]"
             )
     finally:
         session.close()
@@ -1254,6 +1269,23 @@ def audit(
         _table("Auditoria", ["quando", "ator", "ação", "projeto", "ambiente", "resultado"], rows)
     finally:
         session.close()
+
+
+@app.command()
+def backup(
+    destination: Path = typer.Argument(..., help="Arquivo novo ou pasta existente"),
+) -> None:
+    """Copia o banco ainda cifrado (não precisa do daemon nem da passphrase)."""
+    settings = Settings.from_env()
+    try:
+        path = create_backup(settings.db_path, destination)
+    except BackupError as exc:
+        _fail(str(exc))
+    console.print(f"[bold green]Backup criado:[/bold green] {path} (0600, cifrado)")
+    console.print(
+        "Para restaurar você precisa da passphrase que estava em uso na hora do backup. "
+        "Passo a passo: README, seção Backup e restauração."
+    )
 
 
 @app.command()

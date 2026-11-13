@@ -42,7 +42,8 @@ src/envvault/
     system.py                Visão geral, auditoria e verificação, configurações, gerador de senha
     tokens.py                Criar, listar e revogar tokens
   services/
-    audit.py                 Cadeia de hash append-only
+    audit.py                 Auditoria append-only com HMAC derivado da DEK e cabeça fixada em meta
+    backup.py                Cópia consistente do banco cifrado (envvault backup)
     credentials.py           Credenciais cifradas (globais ou por projeto)
     envfile.py               Parser/gerador de .env
     projects.py              Projetos e ambientes
@@ -51,7 +52,7 @@ src/envvault/
     secrets.py               Segredos cifrados, reveal, import/export, valores para exec
     tokens.py                Tokens e autorização por escopo/comando
     vault.py                 init/unlock/lock, troca de passphrase, bloqueio por inatividade
-  migrations/                Alembic (env.py, versions/0001..0003)
+  migrations/                Alembic (env.py, versions/0001..0005)
   web/                       Painel: index.html, app.js, app.css
 tests/                       pytest (conftest com KDF rápido); um arquivo por área
 ```

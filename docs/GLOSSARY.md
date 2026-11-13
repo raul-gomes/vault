@@ -17,4 +17,4 @@
 | **Sessão** | Login humano no painel ou na CLI (cookie + CSRF). Única que pode revelar/exportar. |
 | **Redação** | Troca de valores de segredo por `[REDACTED:CHAVE]` na saída dos comandos. |
 | **Reveal / export** | Mostrar um valor / gerar `.env`. Só pela sessão humana, auditados. |
-| **Auditoria** | Log append-only encadeado por hash; `envvault verify` confere. |
+| **Auditoria** | Log append-only encadeado com HMAC (chave derivada da DEK); a última entrada fica fixada em `meta`. `envvault verify` confere (com o cofre desbloqueado). |
