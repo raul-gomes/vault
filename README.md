@@ -467,6 +467,7 @@ Regras de segurança:
 | `ENVVAULT_HOST` | `127.0.0.1` | bind do daemon |
 | `ENVVAULT_PORT` | `8787` | porta |
 | `ENVVAULT_LOCK_TIMEOUT_MINUTES` | `30` | bloqueio por inatividade |
+| `ENVVAULT_MAX_UNLOCK_HOURS` | `12` | bloqueio absoluto, mesmo com uso contínuo (ADR 0004) |
 | `ENVVAULT_SESSION_IDLE_MINUTES` | `30` | validade da sessão |
 | `ENVVAULT_MAX_EXECS` | `8` | execuções simultâneas |
 | `ENVVAULT_KDF_TIME_COST` | `3` | custo do Argon2id |
@@ -483,7 +484,8 @@ Regras de segurança:
 - exposição de credenciais de serviços em listagens (só o reveal auditado as mostra);
 - adulteração silenciosa do log (cadeia de hash);
 - CSRF, DNS rebinding e uso do dashboard por outra origem;
-- sessão esquecida (bloqueio por inatividade).
+- sessão esquecida (bloqueio por inatividade e bloqueio absoluto de 12 h, aplicados
+  também sem requisições, encerrando comandos em execução).
 
 **Não protege contra:**
 - processo local do mesmo usuário lendo a memória do daemon;
@@ -510,6 +512,7 @@ Regras de segurança:
 | `daemon não está rodando` | daemon parado | `envvault serve` (primeiro plano) ou `envvault init` |
 | `não autenticado` | sessão expirada | rode o comando de novo e informe a passphrase |
 | `vault bloqueado; …` | inatividade | `envvault unlock` |
+| `vault locked after the maximum unlock time` | 12 h desde o desbloqueio | `envvault unlock` |
 | `informe --project` | fora de um diretório com `.envvault.toml` | `envvault link …` ou passe `--project` |
 | `projeto não encontrado: X` | projeto não registrado | `envvault project add X --path .` |
 | `arquivo não encontrado: .env` | não há `.env` no diretório | rode no diretório certo ou crie o `.env` |

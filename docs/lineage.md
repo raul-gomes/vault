@@ -25,6 +25,7 @@ Banco: `~/.envvault/vault.db` (ou `$ENVVAULT_HOME/vault.db`), `0600`, WAL,
 | `kdf` | Parâmetros do Argon2id (salt, tempo, memória, paralelismo) |
 | `dek_wrapped` / `dek_nonce` | DEK cifrada pela KEK derivada da passphrase |
 | `lock_timeout_minutes` | Bloqueio por inatividade configurado no painel |
+| `max_unlock_hours` | Bloqueio absoluto em horas (padrão 12; ausente = `ENVVAULT_MAX_UNLOCK_HOURS`) |
 | `created_at` | Data de criação do cofre |
 
 ## Regras

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import os
 from collections.abc import AsyncIterator
@@ -14,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from envvault import __version__, migrate
 from envvault.api import auth, credentials, exec, projects, secrets, system, tokens
-from envvault.config import Settings
+from envvault.config import LOCK_WATCHDOG_SECONDS, Settings
 from envvault.crypto import InvalidPassphrase
 from envvault.db import build_engine, build_session_factory, secure_database_files
 from envvault.runtime import (
@@ -24,6 +26,7 @@ from envvault.runtime import (
     Runtime,
     VaultNotInitialized,
 )
+from envvault.services import vault
 from envvault.services.credentials import CredentialCorruption
 from envvault.services.envfile import EnvFileTooLarge
 from envvault.services.projects import ProjectError
@@ -33,6 +36,20 @@ from envvault.services.tokens import AgentForbidden, TokenError
 
 WEB_DIR = Path(__file__).parent / "web"
 logger = logging.getLogger("envvault")
+
+
+def watchdog_tick(app: FastAPI) -> None:
+    """Lock the vault if the idle or absolute limit expired (no request needed)."""
+    with app.state.session_factory() as db:
+        if vault.enforce_limits(db, app.state.settings, app.state.runtime):
+            logger.info("vault locked by the watchdog")
+
+
+async def _watchdog_loop(app: FastAPI) -> None:
+    """Run :func:`watchdog_tick` forever, off the event loop."""
+    while True:
+        await asyncio.sleep(LOCK_WATCHDOG_SECONDS)
+        await asyncio.to_thread(watchdog_tick, app)
 
 
 @asynccontextmanager
@@ -47,9 +64,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.runtime = Runtime(settings)
     secure_database_files(settings.db_path)
     settings.pid_path.write_text(str(os.getpid()), encoding="utf-8")
+    watchdog = asyncio.create_task(_watchdog_loop(app))
     try:
         yield
     finally:
+        watchdog.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await watchdog
         app.state.runtime.terminate_all()
         engine.dispose()
         try:

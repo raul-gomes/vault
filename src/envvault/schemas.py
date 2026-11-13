@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, field_validator
 
+from envvault.config import MAX_UNLOCK_HOURS_LIMIT
+
 
 class LoginRequest(BaseModel):
     """Passphrase used to unlock the vault and create a session."""
@@ -153,3 +155,4 @@ class SettingsRequest(BaseModel):
     """Mutable settings."""
 
     lock_timeout_minutes: int = Field(ge=1, le=1440)
+    max_unlock_hours: int | None = Field(default=None, ge=1, le=MAX_UNLOCK_HOURS_LIMIT)

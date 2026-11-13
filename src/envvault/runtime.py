@@ -10,6 +10,7 @@ import signal
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -92,6 +93,9 @@ class Runtime:
         self.settings = settings
         self.dek: bytes | None = None
         self.last_activity: float | None = None
+        self.unlocked_at: float | None = None
+        # Monotonic clock; tests replace it to stay deterministic.
+        self.clock: Callable[[], float] = time.monotonic
         self.sessions: dict[str, Session] = {}
         self.login_failures: dict[str, list[float]] = {}
         self.execs: dict[str, ExecRecord] = {}
@@ -103,7 +107,8 @@ class Runtime:
         """Install the data key in memory and start the idle clock."""
         with self.lock:
             self.dek = dek
-            self.last_activity = time.monotonic()
+            self.unlocked_at = self.clock()
+            self.last_activity = self.unlocked_at
 
     def locked(self) -> bool:
         """Return whether the vault is locked in memory."""
@@ -112,20 +117,21 @@ class Runtime:
     def touch(self) -> None:
         """Record authenticated activity."""
         with self.lock:
-            self.last_activity = time.monotonic()
+            self.last_activity = self.clock()
 
     def clear_key(self) -> None:
         """Drop the data key and every server-side session."""
         with self.lock:
             self.dek = None
             self.last_activity = None
+            self.unlocked_at = None
             self.sessions.clear()
 
     # -- sessions ----------------------------------------------------------
     def create_session(self) -> tuple[str, Session]:
         """Create a session and return ``(raw_token, session)``."""
         raw = new_session_token()
-        now = time.monotonic()
+        now = self.clock()
         session = Session(
             token_hash=hash_token(raw),
             csrf=secrets.token_urlsafe(24),
@@ -144,7 +150,7 @@ class Runtime:
             session = self.sessions.get(hash_token(raw))
             if session is None:
                 return None
-            now = time.monotonic()
+            now = self.clock()
             if now - session.last_seen > self.settings.session_idle_minutes * 60:
                 del self.sessions[session.token_hash]
                 return None
@@ -154,7 +160,7 @@ class Runtime:
     # -- login throttle ----------------------------------------------------
     def check_login_allowed(self, client: str, limit: int = 5, window: float = 60.0) -> None:
         """Raise :class:`RateLimited` after ``limit`` failures inside ``window``."""
-        now = time.monotonic()
+        now = self.clock()
         with self.lock:
             recent = [ts for ts in self.login_failures.get(client, []) if now - ts < window]
             self.login_failures[client] = recent
@@ -164,7 +170,7 @@ class Runtime:
     def record_login_failure(self, client: str) -> None:
         """Record one failed passphrase attempt."""
         with self.lock:
-            self.login_failures.setdefault(client, []).append(time.monotonic())
+            self.login_failures.setdefault(client, []).append(self.clock())
 
     def clear_login_failures(self, client: str) -> None:
         """Reset the throttle after a successful authentication."""

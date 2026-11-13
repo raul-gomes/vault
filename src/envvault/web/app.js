@@ -436,7 +436,7 @@ async function renderOverview() {
       el("dt", {}, "Banco"),
       el("dd", {}, data.paths.database),
       el("dt", {}, "Timeout"),
-      el("dd", {}, `${status.lock_timeout_minutes} min de inatividade`),
+      el("dd", {}, `${status.lock_timeout_minutes} min de inatividade · máximo ${status.max_unlock_hours} h desbloqueado`),
       el("dt", {}, "Versão"),
       el("dd", {}, data.version),
     ),
@@ -1893,10 +1893,14 @@ async function renderSettings() {
   ]);
   const data = await api("/v1/settings");
   const timeout = el("input", { type: "number", min: "1", max: "1440", value: String(data.lock_timeout_minutes), style: "max-width:140px" });
+  const maxUnlock = el("input", { type: "number", min: "1", max: "168", value: String(data.max_unlock_hours), style: "max-width:140px" });
   const saveTimeout = el("button", { class: "btn primary", type: "button" }, "Salvar");
   saveTimeout.addEventListener("click", async () => {
     try {
-      await api("/v1/settings", { method: "PUT", body: { lock_timeout_minutes: Number(timeout.value) } });
+      await api("/v1/settings", {
+        method: "PUT",
+        body: { lock_timeout_minutes: Number(timeout.value), max_unlock_hours: Number(maxUnlock.value) },
+      });
       toast("Timeout atualizado");
       await renderSettings();
     } catch (error) {
@@ -1936,8 +1940,9 @@ async function renderSettings() {
     el(
       "div",
       { class: "grid", style: "grid-template-columns: 1fr 1fr" },
-      section("Bloqueio por inatividade", [
+      section("Bloqueio automático", [
         el("div", { class: "field" }, el("label", {}, "Minutos até bloquear"), timeout),
+        el("div", { class: "field" }, el("label", {}, "Máximo de horas desbloqueado (mesmo em uso)"), maxUnlock),
         el("div", { class: "row" }, saveTimeout),
         el("p", { class: "muted" }, "Ao bloquear, a chave sai da memória, sessões caem e processos em execução são encerrados."),
       ]),

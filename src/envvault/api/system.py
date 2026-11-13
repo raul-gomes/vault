@@ -20,7 +20,12 @@ from envvault.services import audit, vault
 from envvault.services import credentials as credential_service
 from envvault.services import secrets as secret_service
 from envvault.services import tokens as token_service
-from envvault.services.vault import META_LOCK_TIMEOUT, get_meta, set_meta
+from envvault.services.vault import (
+    META_LOCK_TIMEOUT,
+    META_MAX_UNLOCK_HOURS,
+    get_meta,
+    set_meta,
+)
 
 router = APIRouter(tags=["system"], dependencies=[Depends(require_session)])
 
@@ -90,6 +95,7 @@ def get_settings_payload(
     """Return mutable settings and safe instance information."""
     return {
         "lock_timeout_minutes": vault.timeout_minutes(db, settings),
+        "max_unlock_hours": vault.max_unlock_hours(db, settings),
         "host": settings.host,
         "port": settings.port,
         "home": str(settings.home),
@@ -106,9 +112,12 @@ def update_settings(
     state: Annotated[Runtime, Depends(get_runtime)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, object]:
-    """Update the idle-lock timeout."""
+    """Update the idle-lock timeout and, when given, the absolute unlock limit."""
     previous = get_meta(db, META_LOCK_TIMEOUT)
     set_meta(db, META_LOCK_TIMEOUT, str(payload.lock_timeout_minutes))
+    previous_max = get_meta(db, META_MAX_UNLOCK_HOURS)
+    if payload.max_unlock_hours is not None:
+        set_meta(db, META_MAX_UNLOCK_HOURS, str(payload.max_unlock_hours))
     audit.append(
         db,
         actor_type="user",
@@ -117,11 +126,16 @@ def update_settings(
         detail={
             "lock_timeout_minutes": payload.lock_timeout_minutes,
             "previous": previous,
+            "max_unlock_hours": payload.max_unlock_hours,
+            "previous_max_unlock_hours": previous_max,
         },
         lock=state.lock,
     )
     db.commit()
-    return {"lock_timeout_minutes": vault.timeout_minutes(db, settings)}
+    return {
+        "lock_timeout_minutes": vault.timeout_minutes(db, settings),
+        "max_unlock_hours": vault.max_unlock_hours(db, settings),
+    }
 
 
 @router.post("/v1/generate")

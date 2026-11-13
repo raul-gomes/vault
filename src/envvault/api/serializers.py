@@ -118,6 +118,7 @@ def status_payload(status: VaultStatus) -> dict[str, Any]:
         "initialized": status.initialized,
         "unlocked": status.unlocked,
         "lock_timeout_minutes": status.lock_timeout_minutes,
+        "max_unlock_hours": status.max_unlock_hours,
     }
 
 

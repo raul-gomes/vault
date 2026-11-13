@@ -9,6 +9,11 @@ from pathlib import Path
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8787
 DEFAULT_LOCK_TIMEOUT_MINUTES = 30
+# Absolute unlock limit, renewed only by typing the passphrase (ADR 0004).
+DEFAULT_MAX_UNLOCK_HOURS = 12
+MAX_UNLOCK_HOURS_LIMIT = 168
+# How often the daemon checks the idle and absolute limits without requests.
+LOCK_WATCHDOG_SECONDS = 30
 
 # Argon2id defaults. Tests lower these to keep the suite fast.
 DEFAULT_KDF_TIME_COST = 3
@@ -37,6 +42,7 @@ class Settings:
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
     lock_timeout_minutes: int = DEFAULT_LOCK_TIMEOUT_MINUTES
+    max_unlock_hours: int = DEFAULT_MAX_UNLOCK_HOURS
     kdf_time_cost: int = DEFAULT_KDF_TIME_COST
     kdf_memory_kib: int = DEFAULT_KDF_MEMORY_KIB
     kdf_parallelism: int = DEFAULT_KDF_PARALLELISM
@@ -55,6 +61,7 @@ class Settings:
             lock_timeout_minutes=_env_int(
                 "ENVVAULT_LOCK_TIMEOUT_MINUTES", DEFAULT_LOCK_TIMEOUT_MINUTES
             ),
+            max_unlock_hours=_env_int("ENVVAULT_MAX_UNLOCK_HOURS", DEFAULT_MAX_UNLOCK_HOURS),
             kdf_time_cost=_env_int("ENVVAULT_KDF_TIME_COST", DEFAULT_KDF_TIME_COST),
             kdf_memory_kib=_env_int("ENVVAULT_KDF_MEMORY_KIB", DEFAULT_KDF_MEMORY_KIB),
             kdf_parallelism=_env_int("ENVVAULT_KDF_PARALLELISM", DEFAULT_KDF_PARALLELISM),
