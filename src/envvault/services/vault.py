@@ -140,7 +140,7 @@ def unlock(db: Session, state: Runtime, passphrase: str, client: str) -> None:
             action="vault.unlock",
             result="denied",
             detail={"client": client},
-            lock=state.lock,
+            state=state,
         )
         db.commit()
         raise
@@ -153,7 +153,7 @@ def unlock(db: Session, state: Runtime, passphrase: str, client: str) -> None:
         action="vault.unlock",
         result="ok",
         detail={"client": client},
-        lock=state.lock,
+        state=state,
     )
     db.commit()
 
@@ -179,7 +179,7 @@ def lock(db: Session, state: Runtime, actor_type: str = "user", actor_name: str 
         actor_type=actor_type,
         actor_name=actor_name,
         action="vault.lock",
-        lock=state.lock,
+        state=state,
     )
     db.commit()
 
@@ -280,6 +280,6 @@ def change_passphrase(db: Session, state: Runtime, current: str, new: str, *, cl
         actor_type="user",
         actor_name="user",
         action="vault.passphrase.change",
-        lock=state.lock,
+        state=state,
     )
     db.commit()

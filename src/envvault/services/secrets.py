@@ -142,7 +142,7 @@ def upsert(
         environment=environment,
         key_names=[key],
         detail={"version": version},
-        lock=state.lock,
+        state=state,
     )
     db.commit()
     db.refresh(existing)
@@ -173,7 +173,7 @@ def delete(
         project_slug=project.slug,
         environment=environment,
         key_names=[key],
-        lock=state.lock,
+        state=state,
     )
     db.commit()
 
@@ -202,7 +202,7 @@ def reveal(
             environment=environment,
             key_names=[key],
             result="denied",
-            lock=state.lock,
+            state=state,
         )
         db.commit()
         raise
@@ -218,7 +218,7 @@ def reveal(
         project_slug=project.slug,
         environment=environment,
         key_names=[key],
-        lock=state.lock,
+        state=state,
     )
     db.commit()
     return value
@@ -281,7 +281,7 @@ def import_values(
         environment=environment,
         key_names=names,
         detail={"created": created, "updated": updated, "skipped": skipped},
-        lock=state.lock,
+        state=state,
     )
     db.commit()
     return ImportResult(
@@ -315,7 +315,7 @@ def export_text(
             project_slug=project.slug,
             environment=environment,
             result="denied",
-            lock=state.lock,
+            state=state,
         )
         db.commit()
         raise
@@ -329,7 +329,7 @@ def export_text(
         project_slug=project.slug,
         environment=environment,
         key_names=values.keys(),
-        lock=state.lock,
+        state=state,
     )
     db.commit()
     return envfile.render_env(values)

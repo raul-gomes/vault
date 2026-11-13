@@ -80,9 +80,12 @@ def list_audit(
 
 
 @router.get("/v1/audit/verify")
-def verify_audit(db: Annotated[Session, Depends(get_db)]) -> dict[str, object]:
+def verify_audit(
+    db: Annotated[Session, Depends(get_db)],
+    state: Annotated[Runtime, Depends(get_runtime)],
+) -> dict[str, object]:
     """Recompute the hash chain and report the first bad entry, if any."""
-    valid, first_bad_id = audit.verify_chain(db)
+    valid, first_bad_id = audit.verify_chain(db, state.audit_key)
     return {"valid": valid, "first_bad_id": first_bad_id}
 
 
@@ -129,7 +132,7 @@ def update_settings(
             "max_unlock_hours": payload.max_unlock_hours,
             "previous_max_unlock_hours": previous_max,
         },
-        lock=state.lock,
+        state=state,
     )
     db.commit()
     return {

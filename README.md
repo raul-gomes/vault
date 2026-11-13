@@ -512,7 +512,8 @@ Regras de segurança:
 - leitura do banco sem a passphrase;
 - vazamento acidental em logs/build/conversa (redação);
 - exposição de credenciais de serviços em listagens (só o reveal auditado as mostra);
-- adulteração silenciosa do log (cadeia de hash);
+- adulteração silenciosa do log: a cadeia usa HMAC com chave derivada da DEK e a
+  última entrada fica fixada, então reescrever ou apagar o fim exige a passphrase;
 - CSRF, DNS rebinding e uso do dashboard por outra origem;
 - sessão esquecida (bloqueio por inatividade e bloqueio absoluto de 12 h, aplicados
   também sem requisições, encerrando comandos em execução).

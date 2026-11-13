@@ -22,7 +22,7 @@ Rules for every item:
 | 6 | **S4** absolute unlock limit | Lock after 12 h unlocked even with continuous use, killing running commands; configurable in the dashboard (ADR 0004). | in review (PR #8) |
 | 7 | **S5** backup | `envvault backup <destination>`: consistent copy of the still-encrypted database (SQLite backup API), refuses to overwrite; restore steps in the README. No automatic backup. | in review (PR #9) |
 | 8 | **S1** same-user boundary | Document in the README what an agent running as the same OS user can reach (`/proc/<pid>/environ`, token files) (ADR 0002). | in review (PR #10) |
-| 9 | **S3** keyed audit chain | HMAC with a key derived from the DEK; chain head and count stored in `meta`. | open |
+| 9 | **S3** keyed audit chain | HMAC with a key derived from the DEK; chain head and count stored in `meta`. | in review (PR #11) |
 | 10 | **Translation** | One PR moving CLI, dashboard, API messages, README and docs to English (ADR 0005). | open |
 
 Backlog (not scheduled): B4 and Q3–Q8 in [`open-items.md`](open-items.md).

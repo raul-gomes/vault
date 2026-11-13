@@ -16,7 +16,9 @@ from dataclasses import dataclass
 
 from argon2.low_level import Type, hash_secret_raw
 from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 KEY_LENGTH = 32
 NONCE_LENGTH = 12
@@ -24,6 +26,7 @@ SALT_LENGTH = 16
 DEK_AAD = b"envvault:dek:v1"
 SECRET_AAD_PREFIX = "envvault:secret:v1"
 CREDENTIAL_AAD_PREFIX = "envvault:credential:v1"
+AUDIT_KEY_INFO = b"envvault:audit:v1"
 
 
 class InvalidPassphrase(Exception):
@@ -76,6 +79,17 @@ def unwrap_data_key(kek: bytes, nonce: bytes, ciphertext: bytes) -> bytes:
         return AESGCM(kek).decrypt(nonce, ciphertext, DEK_AAD)
     except InvalidTag as exc:
         raise InvalidPassphrase("invalid passphrase") from exc
+
+
+def derive_audit_key(data_key: bytes) -> bytes:
+    """Derive the audit-chain HMAC key from the DEK (HKDF-SHA256).
+
+    Rewriting the audit chain then requires the DEK, which only exists in the
+    daemon memory after the passphrase was typed.
+    """
+    return HKDF(
+        algorithm=hashes.SHA256(), length=KEY_LENGTH, salt=None, info=AUDIT_KEY_INFO
+    ).derive(data_key)
 
 
 def secret_aad(project_id: str, environment: str, key: str, version: int) -> bytes:

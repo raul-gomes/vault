@@ -203,7 +203,7 @@ def create(
             "version": 1,
             "scope": project.slug if project else "global",
         },
-        lock=state.lock,
+        state=state,
     )
     db.commit()
     db.refresh(credential)
@@ -251,7 +251,7 @@ def update(
             "version": version,
             "scope": project.slug if project else "global",
         },
-        lock=state.lock,
+        state=state,
     )
     db.commit()
     db.refresh(credential)
@@ -282,7 +282,7 @@ def delete(
             "category": category,
             "scope": project_slug or "global",
         },
-        lock=state.lock,
+        state=state,
     )
     db.commit()
 
@@ -312,7 +312,7 @@ def reveal(
                 "category": credential.category,
                 "scope": project_slug or "global",
             },
-            lock=state.lock,
+            state=state,
         )
         db.commit()
         raise
@@ -328,7 +328,7 @@ def reveal(
             "category": credential.category,
             "scope": project_slug or "global",
         },
-        lock=state.lock,
+        state=state,
     )
     db.commit()
     return payload

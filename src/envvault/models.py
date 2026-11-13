@@ -175,4 +175,7 @@ class AuditEntry(Base):
     result: Mapped[str] = mapped_column(String(20), default="ok")
     detail: Mapped[str] = mapped_column(Text, default="{}")
     prev_hash: Mapped[str] = mapped_column(String(64))
+    # "hmac" (keyed by the vault), "sha256" (written before any unlock) or
+    # "legacy" (written before revision 0005).
+    mac: Mapped[str] = mapped_column(String(10), default="sha256")
     hash: Mapped[str] = mapped_column(String(64), index=True)

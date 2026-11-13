@@ -197,7 +197,7 @@ def _start_exec(
                 "env_keys": sorted(extra_env),
                 "timeout_seconds": timeout_seconds,
             },
-            lock=state.lock,
+            state=state,
         )
         db.commit()
         record, redactor = runner.spawn(

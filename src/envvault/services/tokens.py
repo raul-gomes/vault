@@ -88,7 +88,7 @@ def create(
             "allowed_commands": commands,
             "any_command": any_command,
         },
-        lock=state.lock,
+        state=state,
     )
     db.commit()
     db.refresh(token)
@@ -129,7 +129,7 @@ def revoke(db: Session, state: Runtime, token: ApiToken, *, actor_name: str = "u
         action="token.revoke",
         project_slug=token.project.slug,
         detail={"token_name": token.name},
-        lock=state.lock,
+        state=state,
     )
     db.commit()
 

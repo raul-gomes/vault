@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from envvault.config import Settings
+from envvault.crypto import derive_audit_key
 
 if TYPE_CHECKING:
     import subprocess
@@ -94,6 +95,9 @@ class Runtime:
         self.dek: bytes | None = None
         self.last_activity: float | None = None
         self.unlocked_at: float | None = None
+        # Integrity key for the audit chain. Kept after locking so entries
+        # written by the lock itself and by commands it kills stay keyed.
+        self.audit_key: bytes | None = None
         # Monotonic clock; tests replace it to stay deterministic.
         self.clock: Callable[[], float] = time.monotonic
         self.sessions: dict[str, Session] = {}
@@ -107,6 +111,7 @@ class Runtime:
         """Install the data key in memory and start the idle clock."""
         with self.lock:
             self.dek = dek
+            self.audit_key = derive_audit_key(dek)
             self.unlocked_at = self.clock()
             self.last_activity = self.unlocked_at
 

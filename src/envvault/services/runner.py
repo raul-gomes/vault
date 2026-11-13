@@ -271,7 +271,7 @@ def stream(
                     "env_keys": list(record.env_keys),
                     "timed_out": timed_out,
                 },
-                lock=state.lock,
+                state=state,
             )
             db.commit()
 

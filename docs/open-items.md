@@ -15,7 +15,7 @@ When done: tick `[x]`, write `DONE` and the commit.
 ## Segurança
 - [x] **S1** Documentar no README que o mesmo usuário lê `/proc/<pid>/environ` dos filhos e os arquivos de token. Avaliar daemon com usuário próprio e `hidepid`. Documented in PR #10 (verified on Ubuntu with `ptrace_scope=1`).
 - [x] **S2** Token sem `allowed_commands` aceita tudo. Decided: explicit list or `--any-command` (ADR 0003). Done in PR #7.
-- [ ] **S3** Auditoria com HMAC derivado da DEK e cabeça da cadeia em `meta` (`src/envvault/services/audit.py`).
+- [x] **S3** Auditoria com HMAC derivado da DEK e cabeça da cadeia em `meta` (`src/envvault/services/audit.py`). Done in PR #11.
 - [x] **S4** Tempo máximo absoluto de desbloqueio, mesmo com agente ativo (`src/envvault/services/vault.py:178`). Done in PR #8.
 - [x] **S5** `envvault backup` + passo a passo de restauração. Done in PR #9.
 
