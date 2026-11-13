@@ -1,7 +1,7 @@
 # Análise inicial do EnvVault (2026-11-13)
 
 Leitura do código em `5d16a07` (9 commits, todos de 2026-11-09). Os itens
-acionáveis estão em [`pendencias.md`](pendencias.md), com o mesmo código (B1, S1…).
+acionáveis estão em [`open-items.md`](open-items.md), com o mesmo código (B1, S1…).
 
 ## Resumo
 

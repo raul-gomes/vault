@@ -8,12 +8,14 @@ AGENTS.md                    Invariantes de segurança e regras para agentes
 README.md                    Setup, uso diário, segurança, solução de problemas
 pyproject.toml / uv.lock     Projeto Python (hatch), dependências travadas
 docs/
+  action-plan.md             Ordered action plan (one PR per item)
   adr/0001-static-ui.md      Decisão: painel web estático, sem bundler/CDN
+  adr/0002..0005             Same-user boundary, command list, 12 h unlock limit, English
   analise-inicial.md         Análise de 2026-11-13 (forças, bugs, riscos, ideias)
   comandos.md                Todos os comandos úteis
   GLOSSARY.md                Termos do domínio
   lineage.md                 Schema do SQLite e migrations
-  pendencias.md              Itens abertos
+  open-items.md              Itens abertos
   tree_files.md              Este arquivo
 src/envvault/
   __init__.py                Versão do pacote

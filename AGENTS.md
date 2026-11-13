@@ -11,8 +11,8 @@ and wins on conflict.
 
 Living docs in `docs/` (update in the same commit as the change): `comandos.md`
 (every useful command), `lineage.md` (SQLite schema + migrations), `tree_files.md`
-(file responsibilities), `pendencias.md` (open items), `GLOSSARY.md`,
-`analise-inicial.md` (baseline review), `adr/`.
+(file responsibilities), `open-items.md` (open items), `GLOSSARY.md`,
+`analise-inicial.md` (baseline review), `action-plan.md` (ordered plan), `adr/`.
 
 Git flow: `feature/*` from `develop`, PR back to `develop`; `main` only receives
 `release/*` and `hotfix/*`.
