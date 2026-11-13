@@ -517,8 +517,18 @@ Regras de segurança:
 - sessão esquecida (bloqueio por inatividade e bloqueio absoluto de 12 h, aplicados
   também sem requisições, encerrando comandos em execução).
 
-**Não protege contra:**
-- processo local do mesmo usuário lendo a memória do daemon;
+**Não protege contra** (decisão registrada no ADR 0002):
+- **qualquer processo do mesmo usuário do sistema**, inclusive um agente com shell.
+  O daemon roda com o seu usuário, então esse processo consegue:
+  - ler `/proc/<pid>/environ` de qualquer comando que o daemon iniciou e ver os
+    segredos injetados enquanto ele roda;
+  - ler os tokens de **todos** os projetos em `~/.envvault/agent-tokens/`;
+  - ler a memória do daemon.
+  A redação evita vazamento **acidental** (log, build, conversa com o agente);
+  ela não segura um agente que queira o valor de propósito. Para reduzir o
+  estrago: tokens com lista de comandos (ADR 0003), bloqueio absoluto de 12 h
+  (ADR 0004) e auditoria. Isolamento real exigiria rodar o daemon e os comandos
+  com outro usuário do sistema, o que não está planejado;
 - comando **deliberadamente malicioso** autorizado pelo token — ele recebe as
   variáveis e pode codificá-las/exfiltrá-las de formas que a redação textual não
   acompanha;
