@@ -40,6 +40,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.session_factory = build_session_factory(engine)
     app.state.runtime = Runtime(settings)
     secure_database_files(settings.db_path)
+    settings.secure_log()
     settings.pid_path.write_text(str(os.getpid()), encoding="utf-8")
     try:
         yield

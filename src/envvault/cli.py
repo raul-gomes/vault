@@ -131,7 +131,7 @@ def ensure_daemon(settings: Settings) -> None:
     if _health(settings) is not None:
         return
     settings.ensure_home()
-    log = settings.log_path.open("ab", buffering=0)
+    log = settings.open_log()
     subprocess.Popen(
         [sys.executable, "-m", "envvault.daemon"],
         stdin=subprocess.DEVNULL,

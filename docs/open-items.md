@@ -4,7 +4,7 @@ Scheduled work lives in [`action-plan.md`](action-plan.md) (order and status).
 This file keeps every finding; details in [`analise-inicial.md`](analise-inicial.md).
 When done: tick `[x]`, write `DONE` and the commit.
 
-- [ ] **S6** `~/.envvault/daemon.log` is `0664` (group/other readable). Plan item 2.
+- [x] **S6** `~/.envvault/daemon.log` is `0664` (group/other readable). Plan item 2. Fixed in PR #4.
 
 ## Bugs (teste de regressão primeiro)
 - [ ] **B1** `cwd` relativo resolvido contra a pasta do daemon (`src/envvault/services/runner.py:39`). Resolver relativo à pasta do projeto; a CLI deve mandar o `cwd` atual quando ele estiver dentro do projeto (`src/envvault/cli.py:788`).
