@@ -17,7 +17,7 @@ Rules for every item:
 | 1 | **B3** orphan process | Reserve the execution slot before `Popen`. Over the limit: HTTP 429 with a clear message, no process started. | open |
 | 2 | **S6** log permissions | `daemon.log` created and kept at `0600`; fix the existing file on start. | open |
 | 3 | **B1** working directory | Relative `--cwd` resolves from the project path. Without `--cwd`, the CLI sends the current directory when it is inside the project; otherwise the project root is used. Paths outside the project stay rejected. No extra paths per project. | open |
-| 4 | **B2** command filter | Compare allowed commands argv element by element, not as a string prefix. | open |
+| 4 | **B2** command filter | Compare allowed commands argv element by element, not as a string prefix. | in review (PR #6) |
 | 5 | **S2** explicit command list | A token needs at least one allowed command, or an explicit `--any-command`. Existing tokens without a list are rejected until recreated (ADR 0003). Recreate the `nacaopatina` token. | open |
 | 6 | **S4** absolute unlock limit | Lock after 12 h unlocked even with continuous use, killing running commands; configurable in the dashboard (ADR 0004). | open |
 | 7 | **S5** backup | `envvault backup <destination>`: consistent copy of the still-encrypted database (SQLite backup API), refuses to overwrite; restore steps in the README. No automatic backup. | open |

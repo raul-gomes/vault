@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -85,13 +86,21 @@ def create(
 
 
 def _normalize_commands(commands: list[str]) -> list[str]:
-    """Validate command prefixes used as an extra guard on injection."""
+    """Validate command prefixes used as an extra guard on injection.
+
+    Each prefix is stored as typed but must split into argv with shell quoting
+    rules (``shlex``), because matching compares argv elements.
+    """
     normalized = [command.strip() for command in commands if command.strip()]
     if len(normalized) > MAX_COMMAND_PREFIXES:
         raise TokenError(f"at most {MAX_COMMAND_PREFIXES} command prefixes")
     for command in normalized:
         if len(command) > MAX_COMMAND_LENGTH:
             raise TokenError(f"command prefix too long: {command[:40]}...")
+        try:
+            shlex.split(command)
+        except ValueError as exc:
+            raise TokenError(f"invalid command prefix {command!r}: {exc}") from exc
     return normalized
 
 
@@ -146,9 +155,22 @@ def authorize(
         raise AgentForbidden("token cannot inject secrets")
     if command is not None:
         prefixes = command_list(token)
-        rendered = " ".join(command)
-        if prefixes and not any(rendered.startswith(prefix) for prefix in prefixes):
+        if prefixes and not any(_argv_starts_with(command, prefix) for prefix in prefixes):
             raise AgentForbidden("command is not allowed by this token")
+
+
+def _argv_starts_with(command: list[str], prefix: str) -> bool:
+    """Whether ``command`` begins with the argv elements of ``prefix``.
+
+    ``"npm run"`` allows ``["npm", "run", "dev"]`` but not ``["npm", "run-script"]``
+    nor ``["npm run", "dev"]``; ``"bun"`` does not allow ``["bunx", ...]``.
+    """
+    try:
+        expected = shlex.split(prefix)
+    except ValueError:
+        # Stored before prefixes were validated: deny rather than guess.
+        return False
+    return bool(expected) and command[: len(expected)] == expected
 
 
 def environment_list(token: ApiToken) -> list[str]:

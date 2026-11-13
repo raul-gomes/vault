@@ -879,7 +879,9 @@ def token_create(
     environment: list[str] = typer.Option(
         ["dev"], "--environment", "-e", help="Ambiente permitido (repetível)"
     ),
-    allow: list[str] = typer.Option([], "--allow", help="Prefixo de comando permitido (repetível)"),
+    allow: list[str] = typer.Option(
+        [], "--allow", help="Comando permitido, comparado palavra por palavra (repetível)"
+    ),
     no_list: bool = typer.Option(False, "--no-list", help="Não permitir listar chaves"),
     no_inject: bool = typer.Option(False, "--no-inject", help="Não permitir execução"),
     save: bool = typer.Option(

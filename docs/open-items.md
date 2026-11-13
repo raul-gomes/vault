@@ -8,7 +8,7 @@ When done: tick `[x]`, write `DONE` and the commit.
 
 ## Bugs (teste de regressão primeiro)
 - [ ] **B1** `cwd` relativo resolvido contra a pasta do daemon (`src/envvault/services/runner.py:39`). Resolver relativo à pasta do projeto; a CLI deve mandar o `cwd` atual quando ele estiver dentro do projeto (`src/envvault/cli.py:788`).
-- [ ] **B2** Filtro de comandos por prefixo de texto (`src/envvault/services/tokens.py:150`). Comparar elemento a elemento do argv.
+- [x] **B2** Filtro de comandos por prefixo de texto (`src/envvault/services/tokens.py:150`). Comparar elemento a elemento do argv. Fixed in PR #6.
 - [ ] **B3** Processo órfão quando estoura o limite de execuções: `Popen` antes de `add_exec` (`src/envvault/services/runner.py:129`/`152`). Reservar a vaga antes de iniciar e mapear o erro para 429.
 - [ ] **B4** Confirmar a limpeza quando o cliente desconecta antes do primeiro evento SSE (`src/envvault/services/runner.py:156`).
 
