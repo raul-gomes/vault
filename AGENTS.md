@@ -2,6 +2,21 @@
 
 Guidance for agents working in this repository.
 
+## General practices and project docs
+
+Cross-project rules (TDD, security, quality, git flow, living docs) live in the
+second brain: `~/HD_Repos/cerebro/20_Praticas/Praticas-Essenciais.md` (private repo
+`github.com/raul-gomes/cerebro`). This file only holds what is specific to EnvVault
+and wins on conflict.
+
+Living docs in `docs/` (update in the same commit as the change): `comandos.md`
+(every useful command), `lineage.md` (SQLite schema + migrations), `tree_files.md`
+(file responsibilities), `open-items.md` (open items), `GLOSSARY.md`,
+`analise-inicial.md` (baseline review), `action-plan.md` (ordered plan), `adr/`.
+
+Git flow: `feature/*` from `develop`, PR back to `develop`; `main` only receives
+`release/*` and `hotfix/*`.
+
 ## What this project is
 
 EnvVault is a local, encrypted vault for project `.env` secrets. A daemon owns
