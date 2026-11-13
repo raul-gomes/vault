@@ -92,6 +92,7 @@ def agent_context(
         "can_list": token.can_list,
         "can_inject": token.can_inject,
         "allowed_commands": tokens.command_list(token),
+        "any_command": token.any_command,
         "usage": (
             "Call POST /v1/agent/exec with {'environment': ..., 'command': [...], "
             "'env': {...}, 'timeout_seconds': ...}. The daemon injects the vault "

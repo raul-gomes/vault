@@ -1644,9 +1644,11 @@ async function renderTokens() {
       token.can_list ? "listar" : null,
       token.can_inject ? "executar" : null,
     ].filter(Boolean).join(" · "),
-    token.allowed_commands.length
-      ? el("span", { class: "mono muted" }, token.allowed_commands.join(", "))
-      : el("span", { class: "badge warn" }, "qualquer comando"),
+    token.any_command
+      ? el("span", { class: "badge warn" }, "qualquer comando")
+      : token.allowed_commands.length
+        ? el("span", { class: "mono muted" }, token.allowed_commands.join(", "))
+        : el("span", { class: "badge err" }, token.can_inject ? "recriar (sem comandos)" : "—"),
     fmtDate(token.last_used_at),
     badge(token.active ? "ativo" : "revogado", token.active ? "ok" : "err"),
     token.active
@@ -1697,6 +1699,7 @@ function openTokenDialog() {
   const environments = el("input", { value: "dev", placeholder: "dev, staging" });
   const canList = el("input", { type: "checkbox", checked: true });
   const canInject = el("input", { type: "checkbox", checked: true });
+  const anyCommand = el("input", { type: "checkbox" });
   const commands = el("textarea", {
     rows: "4",
     placeholder: "npm run dev\npytest\ndocker compose up",
@@ -1725,10 +1728,11 @@ function openTokenDialog() {
     el(
       "div",
       { class: "field" },
-      el("label", {}, "Prefixos de comando permitidos (um por linha; vazio = qualquer)"),
+      el("label", {}, "Comandos permitidos (um por linha, comparados palavra por palavra)"),
       commands,
     ),
-    el("p", { class: "note" }, "Sem prefixos, o token pode executar qualquer argv — inclusive programas que imprimem o ambiente. A redação é a última linha de defesa, não a única."),
+    el("label", { class: "field-inline" }, anyCommand, "Permitir qualquer comando (não recomendado)"),
+    el("p", { class: "note" }, "Com \"qualquer comando\", o token pode executar qualquer argv — inclusive programas que imprimem o ambiente. A redação é a última linha de defesa, não a única."),
   );
   openModal({
     title: "Novo token de agente",
@@ -1747,6 +1751,18 @@ function openTokenDialog() {
         toast("O token precisa de ao menos uma permissão", "error");
         return false;
       }
+      const allowed = commands.value
+        .split("\n")
+        .map((item) => item.trim())
+        .filter(Boolean);
+      if (canInject.checked && !allowed.length && !anyCommand.checked) {
+        toast("Informe ao menos um comando ou marque \"qualquer comando\"", "error");
+        return false;
+      }
+      if (anyCommand.checked && allowed.length) {
+        toast("Escolha uma lista de comandos ou \"qualquer comando\", não os dois", "error");
+        return false;
+      }
       const result = await api("/v1/tokens", {
         method: "POST",
         body: {
@@ -1755,10 +1771,8 @@ function openTokenDialog() {
           environments: envs,
           can_list: canList.checked,
           can_inject: canInject.checked,
-          allowed_commands: commands.value
-            .split("\n")
-            .map((item) => item.trim())
-            .filter(Boolean),
+          allowed_commands: allowed,
+          any_command: anyCommand.checked,
         },
       });
       setTimeout(() => showTokenCreated(result), 120);

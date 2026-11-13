@@ -102,6 +102,7 @@ class TokenCreateRequest(BaseModel):
     can_list: bool = True
     can_inject: bool = True
     allowed_commands: list[str] = Field(default_factory=list)
+    any_command: bool = False
 
 
 class ExecRequest(BaseModel):

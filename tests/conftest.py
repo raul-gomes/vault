@@ -127,6 +127,7 @@ def agent(auth: ApiClient, project: dict[str, Any]) -> dict[str, Any]:
             "can_list": True,
             "can_inject": True,
             "allowed_commands": [],
+            "any_command": True,
         },
     )
     assert response.status_code == 201, response.text

@@ -191,7 +191,7 @@ def test_agent_environment_scope(auth: ApiClient, project: dict) -> None:
             "environments": ["prod"],
             "can_list": False,
             "can_inject": True,
-            "allowed_commands": [],
+            "allowed_commands": ["echo"],
         },
     ).json()
     headers = {"authorization": f"Bearer {prod_only['token']}"}

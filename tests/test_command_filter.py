@@ -16,6 +16,7 @@ def _token(*allowed: str) -> SimpleNamespace:
         environments=json.dumps(["dev"]),
         can_inject=True,
         allowed_commands=json.dumps(list(allowed)),
+        any_command=False,
     )
 
 

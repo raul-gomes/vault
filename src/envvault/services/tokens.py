@@ -36,6 +36,7 @@ def create(
     can_list: bool = True,
     can_inject: bool = True,
     allowed_commands: list[str] | None = None,
+    any_command: bool = False,
     actor_name: str = "user",
 ) -> tuple[ApiToken, str]:
     """Create a token. The raw value is returned once and never stored."""
@@ -52,6 +53,13 @@ def create(
     if not can_list and not can_inject:
         raise TokenError("token must allow listing keys or injecting secrets")
     commands = _normalize_commands(allowed_commands or [])
+    if any_command and commands:
+        raise TokenError("choose either a command list or any command, not both")
+    if can_inject and not commands and not any_command:
+        raise TokenError(
+            "a token that injects secrets needs at least one allowed command "
+            "(or an explicit any-command choice)"
+        )
     raw = new_bearer_token()
     token = ApiToken(
         name=name,
@@ -62,6 +70,7 @@ def create(
         can_list=can_list,
         can_inject=can_inject,
         allowed_commands=json.dumps(commands),
+        any_command=any_command,
     )
     db.add(token)
     db.flush()
@@ -77,6 +86,7 @@ def create(
             "can_list": can_list,
             "can_inject": can_inject,
             "allowed_commands": commands,
+            "any_command": any_command,
         },
         lock=state.lock,
     )
@@ -153,9 +163,14 @@ def authorize(
     authorize_scope(token, project_slug=project_slug, environment=environment)
     if not token.can_inject:
         raise AgentForbidden("token cannot inject secrets")
-    if command is not None:
+    if command is not None and not token.any_command:
         prefixes = command_list(token)
-        if prefixes and not any(_argv_starts_with(command, prefix) for prefix in prefixes):
+        if not prefixes:
+            raise AgentForbidden(
+                "token has no allowed commands (created before they became required); "
+                "recreate it with --allow or --any-command"
+            )
+        if not any(_argv_starts_with(command, prefix) for prefix in prefixes):
             raise AgentForbidden("command is not allowed by this token")
 
 
