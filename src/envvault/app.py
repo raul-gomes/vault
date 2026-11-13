@@ -17,7 +17,13 @@ from envvault.api import auth, credentials, exec, projects, secrets, system, tok
 from envvault.config import Settings
 from envvault.crypto import InvalidPassphrase
 from envvault.db import build_engine, build_session_factory, secure_database_files
-from envvault.runtime import LockedError, RateLimited, Runtime, VaultNotInitialized
+from envvault.runtime import (
+    ExecLimitReached,
+    LockedError,
+    RateLimited,
+    Runtime,
+    VaultNotInitialized,
+)
 from envvault.services.credentials import CredentialCorruption
 from envvault.services.envfile import EnvFileTooLarge
 from envvault.services.projects import ProjectError
@@ -127,6 +133,10 @@ def _register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(RateLimited)
     async def _rate_limited(_request: Request, exc: RateLimited) -> JSONResponse:
+        return JSONResponse(status_code=429, content={"detail": str(exc)})
+
+    @app.exception_handler(ExecLimitReached)
+    async def _exec_limit(_request: Request, exc: ExecLimitReached) -> JSONResponse:
         return JSONResponse(status_code=429, content={"detail": str(exc)})
 
     @app.exception_handler(InvalidPassphrase)

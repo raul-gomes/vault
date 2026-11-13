@@ -9,6 +9,7 @@ import secrets
 import signal
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -32,6 +33,10 @@ class VaultNotInitialized(Exception):
 
 class RateLimited(Exception):
     """Raised when too many passphrase attempts happened in a short window."""
+
+
+class ExecLimitReached(Exception):
+    """Raised when every concurrent execution slot is taken or reserved."""
 
 
 def hash_token(raw: str) -> str:
@@ -90,6 +95,7 @@ class Runtime:
         self.sessions: dict[str, Session] = {}
         self.login_failures: dict[str, list[float]] = {}
         self.execs: dict[str, ExecRecord] = {}
+        self._reserved_slots: set[str] = set()
         self.lock = threading.RLock()
 
     # -- lifecycle ---------------------------------------------------------
@@ -166,11 +172,40 @@ class Runtime:
             self.login_failures.pop(client, None)
 
     # -- executions --------------------------------------------------------
-    def add_exec(self, record: ExecRecord) -> None:
-        """Register a running child process, enforcing the concurrency cap."""
+    def reserve_exec_slot(self) -> str:
+        """Reserve an execution slot before any process is started.
+
+        Returns the execution id the slot is reserved for. Raises
+        :class:`ExecLimitReached` when running plus reserved executions already
+        fill the concurrency cap, so a rejected request never spawns a child.
+        """
         with self.lock:
-            if len(self.execs) >= self.settings.max_concurrent_execs:
-                raise RuntimeError("too many concurrent executions")
+            taken = len(self.execs) + len(self._reserved_slots)
+            if taken >= self.settings.max_concurrent_execs:
+                raise ExecLimitReached("too many concurrent executions; try again later")
+            exec_id = uuid.uuid4().hex[:16]
+            self._reserved_slots.add(exec_id)
+            return exec_id
+
+    def release_exec_slot(self, exec_id: str) -> None:
+        """Give back a reserved slot whose process was never registered."""
+        with self.lock:
+            self._reserved_slots.discard(exec_id)
+
+    @property
+    def reserved_exec_slots(self) -> int:
+        """Number of slots reserved but not yet holding a running process."""
+        with self.lock:
+            return len(self._reserved_slots)
+
+    def add_exec(self, record: ExecRecord) -> None:
+        """Register a running child process, consuming the slot reserved for it.
+
+        Never raises: the process already exists, so refusing it here would
+        leave an untracked child holding secrets.
+        """
+        with self.lock:
+            self._reserved_slots.discard(record.exec_id)
             self.execs[record.exec_id] = record
 
     def remove_exec(self, exec_id: str) -> ExecRecord | None:

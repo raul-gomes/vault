@@ -14,7 +14,7 @@ Rules for every item:
 
 | # | Item | Change | Status |
 | --- | --- | --- | --- |
-| 1 | **B3** orphan process | Reserve the execution slot before `Popen`. Over the limit: HTTP 429 with a clear message, no process started. | open |
+| 1 | **B3** orphan process | Reserve the execution slot before `Popen`. Over the limit: HTTP 429 with a clear message, no process started. | in review (PR #2) |
 | 2 | **S6** log permissions | `daemon.log` created and kept at `0600`; fix the existing file on start. | open |
 | 3 | **B1** working directory | Relative `--cwd` resolves from the project path. Without `--cwd`, the CLI sends the current directory when it is inside the project; otherwise the project root is used. Paths outside the project stay rejected. No extra paths per project. | open |
 | 4 | **B2** command filter | Compare allowed commands argv element by element, not as a string prefix. | open |
