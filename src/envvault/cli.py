@@ -883,7 +883,12 @@ def token_create(
     environment: list[str] = typer.Option(
         ["dev"], "--environment", "-e", help="Ambiente permitido (repetível)"
     ),
-    allow: list[str] = typer.Option([], "--allow", help="Prefixo de comando permitido (repetível)"),
+    allow: list[str] = typer.Option(
+        [], "--allow", help="Comando permitido, comparado palavra por palavra (repetível)"
+    ),
+    any_command: bool = typer.Option(
+        False, "--any-command", help="Permitir qualquer comando (não recomendado)"
+    ),
     no_list: bool = typer.Option(False, "--no-list", help="Não permitir listar chaves"),
     no_inject: bool = typer.Option(False, "--no-inject", help="Não permitir execução"),
     save: bool = typer.Option(
@@ -893,6 +898,10 @@ def token_create(
     ),
 ) -> None:
     """Cria um token de agente e, por padrão, salva em um arquivo 0600."""
+    if not no_inject and not allow and not any_command:
+        _fail('informe ao menos um --allow "<comando>" ou, se for mesmo o caso, --any-command')
+    if allow and any_command:
+        _fail("use --allow ou --any-command, não os dois")
     settings = Settings.from_env()
     session = _login(settings)
     try:
@@ -907,6 +916,7 @@ def token_create(
                 "can_list": not no_list,
                 "can_inject": not no_inject,
                 "allowed_commands": allow,
+                "any_command": any_command,
             },
         )
         created = response.json()
@@ -936,9 +946,9 @@ def token_create(
             console.print(f"  export ENVVAULT_TOKEN={raw}")
         if allow:
             console.print(f"Comandos permitidos: {', '.join(allow)}")
-        else:
+        elif any_command:
             console.print(
-                "[yellow]Sem restrição de comando; qualquer argv é aceito para este token.[/yellow]"
+                "[yellow]Qualquer comando é aceito para este token (--any-command).[/yellow]"
             )
     finally:
         session.close()

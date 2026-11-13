@@ -51,7 +51,7 @@ src/envvault/
     secrets.py               Segredos cifrados, reveal, import/export, valores para exec
     tokens.py                Tokens e autorização por escopo/comando
     vault.py                 init/unlock/lock, troca de passphrase, bloqueio por inatividade
-  migrations/                Alembic (env.py, versions/0001..0003)
+  migrations/                Alembic (env.py, versions/0001..0004)
   web/                       Painel: index.html, app.js, app.css
 tests/                       pytest (conftest com KDF rápido); um arquivo por área
 ```

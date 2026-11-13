@@ -287,7 +287,10 @@ Se quiser o valor bruto (outra máquina, outro agente), use `--no-save`; a CLI
 imprime o token uma única vez. `ENVVAULT_TOKEN` continua funcionando como
 override explícito e tem prioridade sobre o arquivo do projeto.
 
-Sem `--allow`, o token aceita qualquer argv. Restrinja sempre que possível.
+Todo token que executa precisa de pelo menos um `--allow` (comparado palavra por
+palavra: `--allow "npm run"` libera `npm run dev`, mas não `npm run-script`).
+Para liberar tudo, use `--any-command` de propósito. Tokens antigos sem lista
+são recusados: recrie-os (ADR 0003).
 `envvault token list` mostra na coluna `local` qual token está salvo no disco, e
 `envvault token revoke` remove o arquivo quando ele corresponde ao token
 revogado.
@@ -362,7 +365,7 @@ envvault run -p app --env PORT=3001 --timeout 120 -- npm run dev
 
 # tokens
 envvault token create -n claude -p app -e dev --allow "npm run"   # salva 0600
-envvault token create -n claude -p app --no-save                   # imprime uma vez
+envvault token create -n claude -p app --allow pytest --no-save    # imprime uma vez
 envvault token list
 envvault token revoke claude
 envvault context -p app            # escopo do token do projeto
@@ -498,7 +501,7 @@ Regras de segurança:
 **Limitações conhecidas:**
 - valores com menos de 6 caracteres não são redigidos;
 - transformações arbitrárias (hash, cifra, split) não são detectadas;
-- token sem `allowed_commands` aceita qualquer argv, inclusive
+- token criado com `--any-command` aceita qualquer argv, inclusive
   `python3 -c "import os; …"`;
 - SQLite não é um cofre de hardware — a proteção em repouso depende da
   passphrase.

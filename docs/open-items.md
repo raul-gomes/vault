@@ -8,13 +8,13 @@ When done: tick `[x]`, write `DONE` and the commit.
 
 ## Bugs (teste de regressão primeiro)
 - [x] **B1** `cwd` relativo resolvido contra a pasta do daemon (`src/envvault/services/runner.py:39`). Resolver relativo à pasta do projeto; a CLI deve mandar o `cwd` atual quando ele estiver dentro do projeto (`src/envvault/cli.py:788`). Fixed in PR #5.
-- [ ] **B2** Filtro de comandos por prefixo de texto (`src/envvault/services/tokens.py:150`). Comparar elemento a elemento do argv.
+- [x] **B2** Filtro de comandos por prefixo de texto (`src/envvault/services/tokens.py:150`). Comparar elemento a elemento do argv. Fixed in PR #6.
 - [x] **B3** Processo órfão quando estoura o limite de execuções: `Popen` antes de `add_exec` (`src/envvault/services/runner.py:129`/`152`). Reservar a vaga antes de iniciar e mapear o erro para 429. Fixed in PR #2.
 - [ ] **B4** Confirmar a limpeza quando o cliente desconecta antes do primeiro evento SSE (`src/envvault/services/runner.py:156`).
 
 ## Segurança
 - [ ] **S1** Documentar no README que o mesmo usuário lê `/proc/<pid>/environ` dos filhos e os arquivos de token. Avaliar daemon com usuário próprio e `hidepid`.
-- [ ] **S2** Token sem `allowed_commands` aceita tudo. Decided: explicit list or `--any-command` (ADR 0003).
+- [x] **S2** Token sem `allowed_commands` aceita tudo. Decided: explicit list or `--any-command` (ADR 0003). Done in PR #7.
 - [ ] **S3** Auditoria com HMAC derivado da DEK e cabeça da cadeia em `meta` (`src/envvault/services/audit.py`).
 - [x] **S4** Tempo máximo absoluto de desbloqueio, mesmo com agente ativo (`src/envvault/services/vault.py:178`). Done in PR #8.
 - [ ] **S5** `envvault backup` + passo a passo de restauração.
