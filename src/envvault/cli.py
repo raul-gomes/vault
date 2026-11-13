@@ -31,6 +31,7 @@ from envvault.passwords import (
     generate_password,
 )
 from envvault.services import vault
+from envvault.services.backup import BackupError, create_backup
 
 app = typer.Typer(
     add_completion=False,
@@ -131,7 +132,7 @@ def ensure_daemon(settings: Settings) -> None:
     if _health(settings) is not None:
         return
     settings.ensure_home()
-    log = settings.log_path.open("ab", buffering=0)
+    log = settings.open_log()
     subprocess.Popen(
         [sys.executable, "-m", "envvault.daemon"],
         stdin=subprocess.DEVNULL,
@@ -1268,6 +1269,23 @@ def audit(
         _table("Auditoria", ["quando", "ator", "ação", "projeto", "ambiente", "resultado"], rows)
     finally:
         session.close()
+
+
+@app.command()
+def backup(
+    destination: Path = typer.Argument(..., help="Arquivo novo ou pasta existente"),
+) -> None:
+    """Copia o banco ainda cifrado (não precisa do daemon nem da passphrase)."""
+    settings = Settings.from_env()
+    try:
+        path = create_backup(settings.db_path, destination)
+    except BackupError as exc:
+        _fail(str(exc))
+    console.print(f"[bold green]Backup criado:[/bold green] {path} (0600, cifrado)")
+    console.print(
+        "Para restaurar você precisa da passphrase que estava em uso na hora do backup. "
+        "Passo a passo: README, seção Backup e restauração."
+    )
 
 
 @app.command()

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import BinaryIO
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8787
@@ -21,6 +22,9 @@ DEFAULT_KDF_MEMORY_KIB = 64 * 1024
 DEFAULT_KDF_PARALLELISM = 4
 
 MIN_PASSPHRASE_LENGTH = 10
+
+# Owner-only mode for every file the vault writes (database, log, tokens).
+PRIVATE_FILE_MODE = 0o600
 
 
 def _env_int(name: str, fallback: int) -> int:
@@ -88,6 +92,22 @@ class Settings:
     def base_url(self) -> str:
         """Loopback URL used by the CLI and the web UI."""
         return f"http://{self.host}:{self.port}"
+
+    def open_log(self) -> BinaryIO:
+        """Open the daemon log for appending, owner-only whatever the umask.
+
+        The file is created with mode 0600 and an existing file is tightened,
+        so a log written under a permissive umask (0664) stops being readable
+        by other users.
+        """
+        fd = os.open(self.log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, PRIVATE_FILE_MODE)
+        os.fchmod(fd, PRIVATE_FILE_MODE)
+        return os.fdopen(fd, "ab", buffering=0)
+
+    def secure_log(self) -> None:
+        """Tighten an existing daemon log to owner-only (no-op when absent)."""
+        if self.log_path.exists():
+            self.log_path.chmod(PRIVATE_FILE_MODE)
 
     def ensure_home(self) -> None:
         """Create the vault directory with owner-only permissions."""

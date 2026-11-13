@@ -4,7 +4,7 @@ Scheduled work lives in [`action-plan.md`](action-plan.md) (order and status).
 This file keeps every finding; details in [`analise-inicial.md`](analise-inicial.md).
 When done: tick `[x]`, write `DONE` and the commit.
 
-- [ ] **S6** `~/.envvault/daemon.log` is `0664` (group/other readable). Plan item 2.
+- [x] **S6** `~/.envvault/daemon.log` is `0664` (group/other readable). Plan item 2. Fixed in PR #4.
 
 ## Bugs (teste de regressão primeiro)
 - [x] **B1** `cwd` relativo resolvido contra a pasta do daemon (`src/envvault/services/runner.py:39`). Resolver relativo à pasta do projeto; a CLI deve mandar o `cwd` atual quando ele estiver dentro do projeto (`src/envvault/cli.py:788`). Fixed in PR #5.
@@ -17,7 +17,7 @@ When done: tick `[x]`, write `DONE` and the commit.
 - [x] **S2** Token sem `allowed_commands` aceita tudo. Decided: explicit list or `--any-command` (ADR 0003). Done in PR #7.
 - [ ] **S3** Auditoria com HMAC derivado da DEK e cabeça da cadeia em `meta` (`src/envvault/services/audit.py`).
 - [x] **S4** Tempo máximo absoluto de desbloqueio, mesmo com agente ativo (`src/envvault/services/vault.py:178`). Done in PR #8.
-- [ ] **S5** `envvault backup` + passo a passo de restauração.
+- [x] **S5** `envvault backup` + passo a passo de restauração. Done in PR #9.
 
 ## Qualidade
 - [ ] **Q1** Cobertura 73% → 90% com piso no CI (`cli.py` 20%, `daemon.py` 0%).
