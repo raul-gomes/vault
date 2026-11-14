@@ -21,7 +21,7 @@ Serve a minimal SPA in plain HTML/CSS/JS, embedded in the Python package:
 
 - `web/index.html` — shell, login and modal `<dialog>`
 - `web/app.css` — dark theme with CSS variables
-- `web/app.js` — single ES module, no build
+- `web/js/*.js` — native ES modules (entry `main.js`), no build
 
 Rules:
 
