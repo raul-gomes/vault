@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 from typer.testing import CliRunner, Result
 
 from envvault.app import create_app
-from envvault.cli import _common, app
+from envvault.cli import CliError, _common, app
 from envvault.config import Settings
 
 PASSPHRASE = "cli-test-passphrase-123"
@@ -46,6 +46,14 @@ class _ClientWithoutLifespan(TestClient):
 
 
 @dataclass
+class Outcome:
+    """Exit code and combined output of a CLI run that ended in a ``CliError``."""
+
+    exit_code: int
+    output: str
+
+
+@dataclass
 class Cli:
     """Invoke CLI commands against the in-process daemon."""
 
@@ -53,11 +61,18 @@ class Cli:
     app: FastAPI
     settings: Settings
 
-    def __call__(self, *args: str, input: str | None = None) -> Result:
-        """Run ``envvault <args>`` and return the Click result."""
-        return self.runner.invoke(app, list(args), input=input, catch_exceptions=False)
+    def __call__(self, *args: str, input: str | None = None) -> Result | Outcome:
+        """Run ``envvault <args>`` and return the result.
 
-    def ok(self, *args: str, input: str | None = None) -> Result:
+        A ``CliError`` is turned into exit code 1 plus the ``error:`` line, the
+        way :func:`envvault.cli.main` reports it.
+        """
+        try:
+            return self.runner.invoke(app, list(args), input=input, catch_exceptions=False)
+        except CliError as exc:
+            return Outcome(exit_code=1, output=f"error: {exc}\n")
+
+    def ok(self, *args: str, input: str | None = None) -> Result | Outcome:
         """Run a command that must exit 0."""
         result = self(*args, input=input)
         assert result.exit_code == 0, result.output

@@ -170,13 +170,13 @@ def keys(
     if auth is None:
         _fail(
             f"no token for {slug}; create one with `envvault token create -p {slug} --save` "
-            "(como humano, use `envvault list`)"
+            "(as a human, use `envvault list`)"
         )
     client = _token_client(settings, auth.value)
     try:
         items = _token_json(client, "/v1/agent/keys", params={"environment": resolved})["items"]
         _table(
-            f"chaves/{resolved}",
+            f"keys/{resolved}",
             ["key", "version", "updated at"],
             [[item["key"], str(item["version"]), item["updated_at"]] for item in items],
         )

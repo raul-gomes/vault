@@ -74,7 +74,7 @@ class UserSession:
 # --------------------------------------------------------------------------- #
 def _fail(message: str, code: int = 1) -> NoReturn:
     """Print an error and exit non-zero."""
-    typer.secho(f"erro: {message}", fg=typer.colors.RED, err=True)
+    typer.secho(f"error: {message}", fg=typer.colors.RED, err=True)
     raise typer.Exit(code)
 
 

@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from envvault import cli as cli_pkg
+from envvault.cli import CliError
+
 from tests.cli_support import PASSPHRASE, Cli
 
 
@@ -33,3 +38,24 @@ def test_run_injects_and_redacts(cli: Cli, tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "[REDACTED:API_KEY]" in result.output
     assert "super-secret-value" not in result.output
+
+
+def test_main_reports_cli_errors_in_english_without_traceback(
+    cli: Cli, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def boom() -> None:
+        raise CliError("something broke")
+
+    monkeypatch.setattr(cli_pkg, "app", boom)
+    with pytest.raises(SystemExit) as exit_info:
+        cli_pkg.main()
+    assert exit_info.value.code == 1
+    assert capsys.readouterr().err.startswith("error: something broke")
+
+
+def test_fail_prefixes_message_with_english_error_label(cli: Cli) -> None:
+    cli.settings.pid_path.unlink(missing_ok=True)
+    result = cli("stop")
+    assert result.exit_code == 1
+    assert "error:" in result.output
+    assert "erro:" not in result.output
