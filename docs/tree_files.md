@@ -48,7 +48,7 @@ src/envvault/
     envfile.py               .env parser/generator
     projects.py              Projects and environments
     redact.py                Output redaction (value, URL-encoded, base64)
-    runner.py                Starts the child, injects env, redacts output, kills the group
+    runner.py                Starts the child, injects env, redacts output, kills the group; `finalize` + `ExecStreamingResponse` clean up once, even on disconnect
     secrets.py               Encrypted secrets, reveal, import/export, values for exec
     tokens.py                Tokens and scope/command authorization
     vault.py                 init/unlock/lock, passphrase change, idle lock

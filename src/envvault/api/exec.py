@@ -216,8 +216,6 @@ def _start_exec(
     except BaseException:
         state.release_exec_slot(exec_id)
         raise
-    return StreamingResponse(
-        runner.stream(request.app.state.session_factory, state, record, redactor),
-        media_type="text/event-stream",
-        headers=SSE_HEADERS,
+    return runner.exec_response(
+        request.app.state.session_factory, state, record, redactor, headers=SSE_HEADERS
     )

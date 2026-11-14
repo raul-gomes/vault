@@ -8,11 +8,16 @@ import queue
 import subprocess
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from functools import partial
 from pathlib import Path
 from typing import Any
 
+import anyio
+import anyio.to_thread
 from sqlalchemy.orm import Session, sessionmaker
+from starlette.responses import StreamingResponse
+from starlette.types import Receive, Scope, Send
 
 from envvault.models import Project
 from envvault.runtime import ExecRecord, Runtime
@@ -248,32 +253,110 @@ def stream(
             }
         )
     finally:
-        state.remove_exec(record.exec_id)
-        if record.process.poll() is None:
-            from envvault.runtime import _terminate_process_group
+        finalize(
+            factory,
+            state,
+            record,
+            redactor,
+            finished=finished,
+            exit_code=exit_code,
+            duration_ms=duration_ms,
+            timed_out=timed_out,
+        )
 
-            _terminate_process_group(record.process)
-        with factory() as db:
-            audit.append(
-                db,
-                actor_type=record.actor_type,
-                actor_name=record.actor_name,
-                action="exec.finish" if finished else "exec.cancel",
-                project_slug=record.project_slug,
-                environment=record.environment,
-                command=record.command,
-                result="ok" if finished and exit_code == 0 else "error",
-                detail={
-                    "exec_id": record.exec_id,
-                    "exit_code": exit_code,
-                    "duration_ms": duration_ms,
-                    "redacted_patterns": redactor.pattern_count,
-                    "env_keys": list(record.env_keys),
-                    "timed_out": timed_out,
-                },
-                state=state,
-            )
-            db.commit()
+
+def finalize(
+    factory: sessionmaker[Session],
+    state: Runtime,
+    record: ExecRecord,
+    redactor: Redactor,
+    *,
+    finished: bool = False,
+    exit_code: int | None = None,
+    duration_ms: int = 0,
+    timed_out: bool = False,
+) -> bool:
+    """Unregister, kill and audit an execution exactly once (B4).
+
+    Called by the SSE generator when it ends and by :class:`ExecStreamingResponse`
+    when the response ends, so a client that disconnects before the generator
+    runs still gets its child killed and an ``exec.cancel`` entry. Returns
+    ``False`` when the execution was already finalized.
+    """
+    with record.finalize_lock:
+        if record.finalized:
+            return False
+        record.finalized = True
+    state.remove_exec(record.exec_id)
+    if record.process.poll() is None:
+        from envvault.runtime import _terminate_process_group
+
+        _terminate_process_group(record.process)
+    with factory() as db:
+        audit.append(
+            db,
+            actor_type=record.actor_type,
+            actor_name=record.actor_name,
+            action="exec.finish" if finished else "exec.cancel",
+            project_slug=record.project_slug,
+            environment=record.environment,
+            command=record.command,
+            result="ok" if finished and exit_code == 0 else "error",
+            detail={
+                "exec_id": record.exec_id,
+                "exit_code": exit_code,
+                "duration_ms": duration_ms,
+                "redacted_patterns": redactor.pattern_count,
+                "env_keys": list(record.env_keys),
+                "timed_out": timed_out,
+            },
+            state=state,
+        )
+        db.commit()
+    return True
+
+
+class ExecStreamingResponse(StreamingResponse):
+    """SSE response that always finalizes its execution when it ends.
+
+    A sync generator's ``finally`` only runs once the generator has started and
+    is closed. Starlette may never start it (client gone before the first byte)
+    or leave it suspended, so the response owns the cleanup too.
+    """
+
+    def __init__(
+        self,
+        factory: sessionmaker[Session],
+        state: Runtime,
+        record: ExecRecord,
+        redactor: Redactor,
+        headers: Mapping[str, str] | None = None,
+    ) -> None:
+        super().__init__(
+            stream(factory, state, record, redactor),
+            media_type="text/event-stream",
+            headers=headers,
+        )
+        self._finalize = partial(finalize, factory, state, record, redactor)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Stream the events, then finalize even on disconnect or cancellation."""
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            with anyio.CancelScope(shield=True):
+                await anyio.to_thread.run_sync(self._finalize)
+
+
+def exec_response(
+    factory: sessionmaker[Session],
+    state: Runtime,
+    record: ExecRecord,
+    redactor: Redactor,
+    headers: Mapping[str, str] | None = None,
+) -> ExecStreamingResponse:
+    """Build the SSE response for a spawned execution."""
+    return ExecStreamingResponse(factory, state, record, redactor, headers=headers)
 
 
 def _read_output(

@@ -25,4 +25,4 @@ Rules for every item:
 | 9 | **S3** keyed audit chain | HMAC with a key derived from the DEK; chain head and count stored in `meta`. | done (PR #11) |
 | 10 | **Translation** | One PR moving CLI, dashboard, API messages, README and docs to English (ADR 0005). | in review (this PR) |
 
-Backlog (not scheduled): B4 and Q3–Q8 in [`open-items.md`](open-items.md).
+Backlog (not scheduled): Q3–Q8 (B4 fixed) in [`open-items.md`](open-items.md).

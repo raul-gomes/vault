@@ -10,7 +10,7 @@ When done: tick `[x]`, write `DONE` and the commit.
 - [x] **B1** Relative `cwd` resolved against the daemon directory (`src/envvault/services/runner.py:39`). Resolve relative to the project directory; the CLI must send the current `cwd` when it is inside the project (`src/envvault/cli.py:788`). Fixed in PR #5.
 - [x] **B2** Command filter by text prefix (`src/envvault/services/tokens.py:150`). Compare argv element by element. Fixed in PR #6.
 - [x] **B3** Orphan process when the execution limit is exceeded: `Popen` before `add_exec` (`src/envvault/services/runner.py:129`/`152`). Reserve the slot before starting and map the error to 429. Fixed in PR #3.
-- [ ] **B4** Confirm cleanup when the client disconnects before the first SSE event (`src/envvault/services/runner.py:156`).
+- [x] **B4** Confirmed: a client that disconnected before the first SSE event left the child running and its slot taken. `ExecStreamingResponse` now finalizes (kill, unregister, `exec.cancel`) exactly once. Fixed in this PR.
 
 ## Security
 - [x] **S1** Document in the README that the same user reads `/proc/<pid>/environ` of the children and the token files. Evaluate a daemon with its own user and `hidepid`. Documented in PR #10 (verified on Ubuntu with `ptrace_scope=1`).

@@ -57,7 +57,7 @@ the web UI, README, docs and commits (imperative mood).
 | `src/envvault/services/vault.py` | init/unlock/lock, passphrase change, idle enforcement |
 | `src/envvault/services/secrets.py` | encrypted CRUD, reveal, import/export, exec material |
 | `src/envvault/services/credentials.py` | global/project service credentials, encrypted payload, audited reveal |
-| `src/envvault/services/runner.py` | spawn child, assemble env, redact stream, timeout/process-group kill |
+| `src/envvault/services/runner.py` | spawn child, assemble env, redact stream, timeout/process-group kill, cleanup-once on disconnect |
 | `src/envvault/services/tokens.py` | token creation and scope authorization |
 | `src/envvault/services/audit.py` | append-only hash chain |
 | `src/envvault/api/` | FastAPI routers and auth dependencies |
