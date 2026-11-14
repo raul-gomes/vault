@@ -10,6 +10,7 @@ import httpx
 import typer
 
 from envvault import tokenstore
+from envvault.cli import _common
 from envvault.cli._common import (
     _env_overrides,
     _fail,
@@ -31,8 +32,8 @@ from envvault.config import Settings
 # --------------------------------------------------------------------------- #
 def _token_client(settings: Settings, token: str) -> httpx.Client:
     """HTTP client authenticated with an agent token (no cookies)."""
-    return httpx.Client(
-        base_url=settings.base_url,
+    return _common._http_client(
+        settings,
         timeout=httpx.Timeout(connect=10, read=None, write=30, pool=10),
         headers={"authorization": f"Bearer {token}"},
     )
