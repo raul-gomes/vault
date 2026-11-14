@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import typer
+from rich.console import Console
 
 from envvault.cli._common import (
     _copy_to_clipboard,
@@ -58,8 +59,7 @@ def generate(
         _fail("no clipboard utility found (wl-copy/xclip/pbcopy)")
     for password in passwords:
         console.print(password)
-    console.print(
+    Console(stderr=True).print(
         f"[dim]{length} characters · ~{bits} bits of entropy · "
         f"{len(options.alphabet())} possible symbols[/dim]",
-        err=True,
     )
