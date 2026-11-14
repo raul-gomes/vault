@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tests.cli_support import PASSPHRASE, Cli, cli  # noqa: F401  (pytest fixture)
+from tests.cli_support import PASSPHRASE, Cli
 
 
 def test_init_then_status_reports_unlocked_vault(cli: Cli) -> None:
