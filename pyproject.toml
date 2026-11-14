@@ -1,6 +1,6 @@
 [project]
 name = "envvault"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local encrypted vault that injects project .env secrets into subprocesses without exposing them."
 readme = "README.md"
 requires-python = ">=3.12"

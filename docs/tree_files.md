@@ -1,10 +1,11 @@
 # File tree
 
-Updated on 2026-11-13. Responsibility of each versioned file.
+Updated on 2026-11-14. Responsibility of each versioned file.
 
 ```
 .github/workflows/ci.yml     CI: ruff (lint + format) and pytest with coverage
 AGENTS.md                    Security invariants and rules for agents
+CHANGELOG.md                 Release notes per version
 README.md                    Setup, daily use, security, troubleshooting
 pyproject.toml / uv.lock     Python project (hatch), locked dependencies
 docs/
