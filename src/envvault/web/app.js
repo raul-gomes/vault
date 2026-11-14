@@ -60,10 +60,10 @@ async function api(path, options = {}) {
   if (response.status === 401 || response.status === 423) {
     showLogin(
       response.status === 423
-        ? "O cofre foi bloqueado por inatividade. Entre novamente."
-        : "Sessão expirada. Entre novamente.",
+        ? "The vault was locked due to inactivity. Sign in again."
+        : "Session expired. Sign in again.",
     );
-    throw new ApiError("não autenticado", response.status);
+    throw new ApiError("not authenticated", response.status);
   }
   if (!response.ok) {
     let detail = response.statusText;
@@ -97,7 +97,7 @@ function fmtDate(iso) {
   if (!iso) return "—";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+  return date.toLocaleString("en", { dateStyle: "short", timeStyle: "short" });
 }
 
 function badge(text, kind = "") {
@@ -147,7 +147,7 @@ function setActiveNav(name) {
 }
 
 function loading() {
-  view().replaceChildren(el("p", { class: "muted" }, "Carregando…"));
+  view().replaceChildren(el("p", { class: "muted" }, "Loading…"));
 }
 
 function section(title, children, actions = []) {
@@ -207,7 +207,7 @@ function emptyState(title, description, actionLabel, action) {
 // ---------------------------------------------------------------------------
 // modals
 // ---------------------------------------------------------------------------
-function openModal({ title, body, submitLabel = "Salvar", danger = false, hideCancel = false, onSubmit }) {
+function openModal({ title, body, submitLabel = "Save", danger = false, hideCancel = false, onSubmit }) {
   const node = dialog();
   $id("modal-title").textContent = title;
   $id("modal-body").replaceChildren(body);
@@ -264,10 +264,10 @@ function askPassphrase(title, description) {
         el("p", { class: "muted" }, description),
         el("div", { class: "field" }, el("label", {}, "Passphrase"), input),
       ),
-      submitLabel: "Confirmar",
+      submitLabel: "Confirm",
       onSubmit: () => {
         if (!input.value) {
-          toast("Informe a passphrase", "error");
+          toast("Enter the passphrase", "error");
           return false;
         }
         settled = true;
@@ -287,14 +287,14 @@ function showIssues(issues) {
       el(
         "div",
         { class: issue.level === "warning" ? "note" : "note" },
-        `Linha ${issue.line}: ${issue.message}`,
+        `Line ${issue.line}: ${issue.message}`,
       ),
     ),
   );
   openModal({
-    title: "Avisos do .env",
+    title: ".env warnings",
     body: list,
-    submitLabel: "Entendi",
+    submitLabel: "Got it",
     hideCancel: true,
   });
 }
@@ -315,7 +315,7 @@ $id("login-form").addEventListener("submit", async (event) => {
       body: JSON.stringify({ passphrase: $id("passphrase").value }),
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.detail || "Falha ao desbloquear");
+    if (!response.ok) throw new Error(payload.detail || "Failed to unlock");
     state.csrf = payload.csrf_token;
     state.version = payload.version || state.version;
     $id("passphrase").value = "";
@@ -336,7 +336,7 @@ document.querySelectorAll(".nav-item").forEach((button) => {
 $id("lock-btn").addEventListener("click", async () => {
   try {
     await api("/v1/auth/lock", { method: "POST" });
-    showLogin("Cofre bloqueado.");
+    showLogin("Vault locked.");
   } catch (error) {
     if (error.status !== 401) toast(error.message, "error");
   }
@@ -364,12 +364,12 @@ async function bootstrap() {
     } else {
       showLogin(
         payload.initialized === false
-          ? "Cofre ainda não inicializado. Rode `envvault init` no terminal."
+          ? "Vault not initialized yet. Run `envvault init` in the terminal."
           : "",
       );
     }
   } catch {
-    showLogin("Daemon indisponível. Rode `envvault serve` ou `envvault init`.");
+    showLogin("Daemon unavailable. Run `envvault serve` or `envvault init`.");
   }
 }
 
@@ -411,44 +411,44 @@ async function route() {
 // overview
 // ---------------------------------------------------------------------------
 async function renderOverview() {
-  setHeader("Visão geral", "O que está no cofre e o que aconteceu recentemente.", [
-    { label: "Atualizar", onClick: renderOverview },
-    { label: "Novo projeto", primary: true, onClick: () => openProjectDialog() },
+  setHeader("Overview", "What is in the vault and what happened recently.", [
+    { label: "Refresh", onClick: renderOverview },
+    { label: "New project", primary: true, onClick: () => openProjectDialog() },
   ]);
   const data = await api("/v1/overview");
   const status = data.status;
   const cards = el(
     "div",
     { class: "grid" },
-    metricCard("Projetos", data.projects, "diretórios registrados"),
-    metricCard("Segredos", data.secrets, "valores criptografados"),
-    metricCard("Ambientes", data.environments, "dev, prod, staging…"),
-    metricCard("Credenciais", data.credentials, "serviços externos"),
-    metricCard("Tokens ativos", data.active_tokens, "acesso de agentes"),
+    metricCard("Projects", data.projects, "registered directories"),
+    metricCard("Secrets", data.secrets, "encrypted values"),
+    metricCard("Environments", data.environments, "dev, prod, staging…"),
+    metricCard("Credentials", data.credentials, "external services"),
+    metricCard("Active tokens", data.active_tokens, "agent access"),
   );
   const statusCard = el(
     "div",
     { class: "card stack" },
-    el("div", { class: "row" }, el("h3", {}, "Estado do cofre"), badge(status.unlocked ? "desbloqueado" : "bloqueado", status.unlocked ? "ok" : "warn")),
+    el("div", { class: "row" }, el("h3", {}, "Vault status"), badge(status.unlocked ? "unlocked" : "locked", status.unlocked ? "ok" : "warn")),
     el(
       "dl",
       { class: "kv" },
-      el("dt", {}, "Banco"),
+      el("dt", {}, "Database"),
       el("dd", {}, data.paths.database),
       el("dt", {}, "Timeout"),
-      el("dd", {}, `${status.lock_timeout_minutes} min de inatividade · máximo ${status.max_unlock_hours} h desbloqueado`),
-      el("dt", {}, "Versão"),
+      el("dd", {}, `${status.lock_timeout_minutes} min of inactivity · maximum ${status.max_unlock_hours} h unlocked`),
+      el("dt", {}, "Version"),
       el("dd", {}, data.version),
     ),
     el(
       "p",
       { class: "muted" },
-      "O Claude recebe apenas o resultado redigido dos comandos. Valores só saem do cofre em reveal/export, sempre auditados.",
+      "Claude only receives the redacted output of commands. Values only leave the vault via reveal/export, always audited.",
     ),
   );
   const recent = data.recent_audit.length
     ? table(
-        ["quando", "ator", "ação", "projeto", "resultado"],
+        ["when", "actor", "action", "project", "result"],
         data.recent_audit.map((entry) => [
           fmtDate(entry.ts),
           `${entry.actor_type}:${entry.actor_name}`,
@@ -457,14 +457,14 @@ async function renderOverview() {
           badge(entry.result, entry.result === "ok" ? "ok" : "err"),
         ]),
       )
-    : el("p", { class: "muted" }, "Nenhum evento ainda.");
+    : el("p", { class: "muted" }, "No events yet.");
   view().replaceChildren(
     cards,
     el(
       "div",
       { class: "grid", style: "grid-template-columns: 1.2fr 1fr;align-items:start" },
       statusCard,
-      section("Atividade recente", [recent]),
+      section("Recent activity", [recent]),
     ),
   );
 }
@@ -479,17 +479,17 @@ async function loadProjects() {
 }
 
 async function renderProjects() {
-  setHeader("Projetos", "Cada projeto tem um diretório e ambientes independentes.", [
-    { label: "Atualizar", onClick: renderProjects },
-    { label: "Novo projeto", primary: true, onClick: () => openProjectDialog() },
+  setHeader("Projects", "Each project has its own directory and independent environments.", [
+    { label: "Refresh", onClick: renderProjects },
+    { label: "New project", primary: true, onClick: () => openProjectDialog() },
   ]);
   const projects = await loadProjects();
   if (!projects.length) {
     view().replaceChildren(
       emptyState(
-        "Nenhum projeto ainda",
-        "Registre o diretório de um repositório para importar ou criar segredos.",
-        "Registrar primeiro projeto",
+        "No projects yet",
+        "Register a repository directory to import or create secrets.",
+        "Register first project",
         () => openProjectDialog(),
       ),
     );
@@ -513,11 +513,11 @@ async function renderProjects() {
           location.hash = `#/projects/${project.id}`;
         },
       },
-      "Abrir",
+      "Open",
     ),
   ]);
   view().replaceChildren(
-    table(["slug", "nome", "diretório", "segredos", "ambientes", ""], rows, {
+    table(["slug", "name", "directory", "secrets", "environments", ""], rows, {
       onRowClick: (tr) => {
         const index = Array.from(tr.parentNode.children).indexOf(tr);
         location.hash = `#/projects/${projects[index].id}`;
@@ -579,13 +579,13 @@ function renderProjectPage() {
   if (!envs.includes(state.environment)) envs.unshift(state.environment);
   const env = state.environment;
   setHeader(project.name, `${project.slug} · ${project.path}`, [
-    { label: "Credenciais", onClick: () => {
+    { label: "Credentials", onClick: () => {
         state.credentialFilter = { query: "", category: "", project: project.id };
         location.hash = "#/credentials";
       } },
-    { label: "Editar", onClick: () => openProjectDialog(project) },
-    { label: "Excluir", danger: true, onClick: () => openDeleteProject(project) },
-    { label: "Atualizar", onClick: refreshProject },
+    { label: "Edit", onClick: () => openProjectDialog(project) },
+    { label: "Delete", danger: true, onClick: () => openDeleteProject(project) },
+    { label: "Refresh", onClick: refreshProject },
   ]);
 
   const tabs = el(
@@ -605,7 +605,7 @@ function renderProjectPage() {
         class: "env-tab",
         type: "button",
         onclick: async () => {
-          const name = await promptText("Novo ambiente", "Nome curto, ex.: staging", "staging");
+          const name = await promptText("New environment", "Short name, e.g. staging", "staging");
           if (!name) return;
           const normalized = name.trim().toLowerCase();
           try {
@@ -615,22 +615,22 @@ function renderProjectPage() {
             });
             state.environment = normalized;
             await refreshProject();
-            toast(`Ambiente ${normalized} pronto.`);
+            toast(`Environment ${normalized} ready.`);
           } catch (error) {
             toast(error.message, "error");
           }
         },
       },
-      "+ ambiente",
+      "+ environment",
     ),
   );
 
   const actions = el(
     "div",
     { class: "row" },
-    el("button", { class: "btn primary", type: "button", onclick: () => openSecretDialog(project, env) }, "Novo segredo"),
-    el("button", { class: "btn", type: "button", onclick: () => openImportDialog(project, env) }, "Importar .env"),
-    el("button", { class: "btn", type: "button", onclick: () => openExportDialog(project, env) }, "Exportar .env"),
+    el("button", { class: "btn primary", type: "button", onclick: () => openSecretDialog(project, env) }, "New secret"),
+    el("button", { class: "btn", type: "button", onclick: () => openImportDialog(project, env) }, "Import .env"),
+    el("button", { class: "btn", type: "button", onclick: () => openExportDialog(project, env) }, "Export .env"),
   );
 
   const rows = state.secrets.map((secret) => [
@@ -640,18 +640,18 @@ function renderProjectPage() {
     el(
       "div",
       { class: "row" },
-      el("button", { class: "btn small", type: "button", onclick: () => openRevealDialog(project, env, secret) }, "Revelar"),
-      el("button", { class: "btn small", type: "button", onclick: () => openSecretDialog(project, env, secret) }, "Editar"),
-      el("button", { class: "btn small danger", type: "button", onclick: () => openDeleteSecret(project, env, secret) }, "Excluir"),
+      el("button", { class: "btn small", type: "button", onclick: () => openRevealDialog(project, env, secret) }, "Reveal"),
+      el("button", { class: "btn small", type: "button", onclick: () => openSecretDialog(project, env, secret) }, "Edit"),
+      el("button", { class: "btn small danger", type: "button", onclick: () => openDeleteSecret(project, env, secret) }, "Delete"),
     ),
   ]);
 
   const secretsSection = state.secrets.length
-    ? table(["chave", "versão", "atualizado", ""], rows)
+    ? table(["key", "version", "updated", ""], rows)
     : emptyState(
-        `Nenhum segredo em ${env}`,
-        "Adicione manualmente, gere uma senha ou importe um arquivo .env.",
-        "Adicionar segredo",
+        `No secrets in ${env}`,
+        "Add one manually, generate a password, or import a .env file.",
+        "Add secret",
         () => openSecretDialog(project, env),
       );
 
@@ -666,11 +666,11 @@ function renderProjectPage() {
       el("span", { class: "tag" }, project.slug),
       ...project.environments.map((item) => el("span", { class: "tag" }, `${item.environment}: ${item.count}`)),
     ),
-    el("p", { class: "muted" }, `Diretório: ${project.path}`),
+    el("p", { class: "muted" }, `Directory: ${project.path}`),
     el(
       "p",
       { class: "muted" },
-      "A injeção acontece dentro do daemon. O processo filho recebe as variáveis; a saída é redigida antes de voltar para a tela ou para o agente.",
+      "Injection happens inside the daemon. The child process receives the variables; output is redacted before it returns to the screen or to the agent.",
     ),
   );
 
@@ -678,7 +678,7 @@ function renderProjectPage() {
     el(
       "div",
       { class: "page-head" },
-      el("div", { class: "breadcrumb" }, el("button", { type: "button", onclick: () => (location.hash = "#/projects") }, "Projetos"), " / ", project.slug),
+      el("div", { class: "breadcrumb" }, el("button", { type: "button", onclick: () => (location.hash = "#/projects") }, "Projects"), " / ", project.slug),
     ),
     tabs,
     actions,
@@ -704,27 +704,27 @@ function buildProjectCredentials(project) {
       el(
         "button",
         { class: "btn small", type: "button", onclick: () => openRevealCredential(credential) },
-        "Revelar",
+        "Reveal",
       ),
       el(
         "button",
         { class: "btn small", type: "button", onclick: () => openCredentialDialog(credential) },
-        "Editar",
+        "Edit",
       ),
       el(
         "button",
         { class: "btn small danger", type: "button", onclick: () => openDeleteCredential(credential) },
-        "Excluir",
+        "Delete",
       ),
     ),
   ]);
 
   const ownContent = own.length
-    ? table(["nome", "categoria", "versão", "atualizado", ""], ownRows)
+    ? table(["name", "category", "version", "updated", ""], ownRows)
     : el(
         "p",
         { class: "muted" },
-        "Nenhuma credencial específica deste projeto. As globais abaixo também ficam disponíveis aqui.",
+        "No credentials specific to this project. The global ones below are also available here.",
       );
 
   const globalRows = globals.map((credential) => [
@@ -734,7 +734,7 @@ function buildProjectCredentials(project) {
     el(
       "button",
       { class: "btn small", type: "button", onclick: () => openRevealCredential(credential) },
-      "Revelar",
+      "Reveal",
     ),
   ]);
 
@@ -749,7 +749,7 @@ function buildProjectCredentials(project) {
           type: "button",
           onclick: () => openCredentialDialog(null, project),
         },
-        "Nova credencial deste projeto",
+        "New credential for this project",
       ),
       el(
         "button",
@@ -761,7 +761,7 @@ function buildProjectCredentials(project) {
             location.hash = "#/credentials";
           },
         },
-        "Gerenciar todas",
+        "Manage all",
       ),
     ),
     ownContent,
@@ -769,26 +769,26 @@ function buildProjectCredentials(project) {
 
   if (globals.length) {
     children.push(
-      el("p", { class: "muted" }, "Credenciais globais disponíveis neste projeto"),
-      table(["nome", "categoria", "versão", ""], globalRows),
+      el("p", { class: "muted" }, "Global credentials available in this project"),
+      table(["name", "category", "version", ""], globalRows),
     );
   }
 
-  return section("Credenciais do projeto", children);
+  return section("Project credentials", children);
 }
 
 function buildConsole(project, env) {
   const command = el("input", { id: "exec-command", placeholder: "npm run dev", autocomplete: "off" });
   const cwd = el("input", { id: "exec-cwd", placeholder: project.path, autocomplete: "off" });
   const output = el("pre", { id: "exec-output", class: "output" });
-  const runButton = el("button", { class: "btn primary", type: "button" }, "Executar");
-  const stopButton = el("button", { class: "btn danger", type: "button", disabled: true }, "Parar");
-  const note = el("p", { class: "muted" }, "A saída passa pelo redator de segredos. Comandos são auditados.");
+  const runButton = el("button", { class: "btn primary", type: "button" }, "Run");
+  const stopButton = el("button", { class: "btn danger", type: "button", disabled: true }, "Stop");
+  const note = el("p", { class: "muted" }, "Output goes through the secret redactor. Commands are audited.");
 
   runButton.addEventListener("click", async () => {
     const argv = splitCommand(command.value.trim());
     if (!argv.length) {
-      toast("Informe um comando", "error");
+      toast("Enter a command", "error");
       return;
     }
     runButton.disabled = true;
@@ -810,12 +810,12 @@ function buildConsole(project, env) {
         signal: controller.signal,
       });
       if (response.status === 401 || response.status === 423) {
-        showLogin("Sessão expirada. Entre novamente.");
+        showLogin("Session expired. Sign in again.");
         return;
       }
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        throw new ApiError(payload.detail || "Falha ao executar", response.status);
+        throw new ApiError(payload.detail || "Failed to run", response.status);
       }
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -832,7 +832,7 @@ function buildConsole(project, env) {
         }
       }
     } catch (error) {
-      if (error.name === "AbortError") toast("Execução cancelada.");
+      if (error.name === "AbortError") toast("Run canceled.");
       else toast(error.message, "error");
     } finally {
       state.execAbort = null;
@@ -855,8 +855,8 @@ function buildConsole(project, env) {
     el(
       "div",
       { class: "grid", style: "grid-template-columns: 1.4fr 1fr" },
-      el("div", { class: "field" }, el("label", {}, "Comando (argv, sem shell)"), command),
-      el("div", { class: "field" }, el("label", {}, "Diretório (dentro do projeto)"), cwd),
+      el("div", { class: "field" }, el("label", {}, "Command (argv, no shell)"), command),
+      el("div", { class: "field" }, el("label", {}, "Directory (inside the project)"), cwd),
     ),
     el("div", { class: "row" }, runButton, stopButton, el("div", { class: "spacer" }), note),
     output,
@@ -877,7 +877,7 @@ function handleSseFrame(frame, output) {
       output.scrollTop = output.scrollHeight;
     } else if (event.type === "exit") {
       const ok = event.code === 0;
-      toast(ok ? "Comando finalizado (código 0)." : `Comando saiu com código ${event.code}.`, ok ? "ok" : "error");
+      toast(ok ? "Command finished (code 0)." : `Command exited with code ${event.code}.`, ok ? "ok" : "error");
     }
   }
 }
@@ -897,24 +897,24 @@ function splitCommand(line) {
 // ---------------------------------------------------------------------------
 function openProjectDialog(project = null) {
   const editing = Boolean(project);
-  const slug = el("input", { value: project?.slug || "", disabled: editing, placeholder: "meu-app" });
-  const name = el("input", { value: project?.name || "", placeholder: "Meu App" });
-  const path = el("input", { value: project?.path || "", placeholder: "/home/voce/projetos/meu-app" });
+  const slug = el("input", { value: project?.slug || "", disabled: editing, placeholder: "my-app" });
+  const name = el("input", { value: project?.name || "", placeholder: "My App" });
+  const path = el("input", { value: project?.path || "", placeholder: "/home/you/projects/my-app" });
   const body = el(
     "div",
     { class: "stack" },
     el("div", { class: "field" }, el("label", {}, "Slug"), slug),
-    el("div", { class: "field" }, el("label", {}, "Nome"), name),
-    el("div", { class: "field" }, el("label", {}, "Diretório absoluto"), path),
-    editing ? null : el("p", { class: "note info" }, "O caminho precisa existir no servidor local; o console só executa dentro dele."),
+    el("div", { class: "field" }, el("label", {}, "Name"), name),
+    el("div", { class: "field" }, el("label", {}, "Absolute directory"), path),
+    editing ? null : el("p", { class: "note info" }, "The path must exist on the local server; the console only runs inside it."),
   );
   openModal({
-    title: editing ? "Editar projeto" : "Novo projeto",
+    title: editing ? "Edit project" : "New project",
     body,
-    submitLabel: editing ? "Salvar" : "Criar",
+    submitLabel: editing ? "Save" : "Create",
     onSubmit: async () => {
       if (!slug.value.trim() || !name.value.trim() || !path.value.trim()) {
-        toast("Preencha slug, nome e diretório", "error");
+        toast("Fill in slug, name and directory", "error");
         return false;
       }
       if (editing) {
@@ -922,14 +922,14 @@ function openProjectDialog(project = null) {
           method: "PATCH",
           body: { name: name.value.trim(), path: path.value.trim() },
         });
-        toast("Projeto atualizado");
+        toast("Project updated");
         await renderProject(project.id);
       } else {
         const created = await api("/v1/projects", {
           method: "POST",
           body: { slug: slug.value.trim(), name: name.value.trim(), path: path.value.trim() },
         });
-        toast("Projeto criado");
+        toast("Project created");
         location.hash = `#/projects/${created.id}`;
       }
       return true;
@@ -940,25 +940,25 @@ function openProjectDialog(project = null) {
 function openDeleteProject(project) {
   const input = el("input", { placeholder: project.slug });
   openModal({
-    title: "Excluir projeto",
+    title: "Delete project",
     danger: true,
-    submitLabel: "Excluir definitivamente",
+    submitLabel: "Delete permanently",
     body: el(
       "div",
       { class: "stack" },
-      el("p", {}, `Isso apaga ${project.slug}, todos os segredos e tokens. Não há desfazer.`),
-      el("div", { class: "field" }, el("label", {}, `Digite "${project.slug}" para confirmar`), input),
+      el("p", {}, `This deletes ${project.slug} and all its secrets and tokens. This cannot be undone.`),
+      el("div", { class: "field" }, el("label", {}, `Type "${project.slug}" to confirm`), input),
     ),
     onSubmit: async () => {
       if (input.value !== project.slug) {
-        toast("O slug não confere", "error");
+        toast("The slug does not match", "error");
         return false;
       }
       await api(`/v1/projects/${project.id}`, {
         method: "DELETE",
         body: { confirm_slug: project.slug },
       });
-      toast("Projeto excluído");
+      toast("Project deleted");
       state.project = null;
       location.hash = "#/projects";
       return true;
@@ -982,7 +982,7 @@ function promptText(title, description, placeholder = "") {
     openModal({
       title,
       body: el("div", { class: "stack" }, el("p", { class: "muted" }, description), input),
-      submitLabel: "Confirmar",
+      submitLabel: "Confirm",
       onSubmit: () => {
         if (!input.value.trim()) return false;
         settled = true;
@@ -1006,14 +1006,14 @@ function openSecretDialog(project, environment, secret = null) {
   });
   const value = el("input", {
     type: "password",
-    placeholder: editing ? "novo valor (o atual não é exibido)" : "valor do segredo",
+    placeholder: editing ? "new value (the current one is not shown)" : "secret value",
     autocomplete: "new-password",
   });
-  const reveal = el("button", { class: "btn small", type: "button" }, "Mostrar");
+  const reveal = el("button", { class: "btn small", type: "button" }, "Show");
   reveal.addEventListener("click", () => {
     const hidden = value.type === "password";
     value.type = hidden ? "text" : "password";
-    reveal.textContent = hidden ? "Ocultar" : "Mostrar";
+    reveal.textContent = hidden ? "Hide" : "Show";
   });
 
   const length = el("input", { type: "number", min: "8", max: "256", value: "32", style: "width:90px" });
@@ -1022,7 +1022,7 @@ function openSecretDialog(project, environment, secret = null) {
   const digits = el("input", { type: "checkbox", checked: true });
   const symbols = el("input", { type: "checkbox", checked: true });
   const entropy = el("span", { class: "muted" }, "");
-  const generate = el("button", { class: "btn small", type: "button" }, "Gerar senha");
+  const generate = el("button", { class: "btn small", type: "button" }, "Generate password");
   generate.addEventListener("click", async () => {
     generate.disabled = true;
     try {
@@ -1037,9 +1037,9 @@ function openSecretDialog(project, environment, secret = null) {
         },
       });
       value.type = "text";
-      reveal.textContent = "Ocultar";
+      reveal.textContent = "Hide";
       value.value = data.password;
-      entropy.textContent = `~${data.entropy_bits} bits · ${data.alphabet_size} símbolos`;
+      entropy.textContent = `~${data.entropy_bits} bits · ${data.alphabet_size} symbols`;
     } catch (error) {
       toast(error.message, "error");
     } finally {
@@ -1050,15 +1050,15 @@ function openSecretDialog(project, environment, secret = null) {
   const generator = el(
     "div",
     { class: "card stack", style: "padding:14px;background:var(--panel-2)" },
-    el("div", { class: "row" }, el("strong", {}, "Gerador embutido"), el("div", { class: "spacer" }), generate),
+    el("div", { class: "row" }, el("strong", {}, "Built-in generator"), el("div", { class: "spacer" }), generate),
     el(
       "div",
       { class: "row" },
-      el("label", { class: "field-inline" }, "Tamanho", length),
+      el("label", { class: "field-inline" }, "Length", length),
       el("label", { class: "field-inline" }, upper, "A-Z"),
       el("label", { class: "field-inline" }, lower, "a-z"),
       el("label", { class: "field-inline" }, digits, "0-9"),
-      el("label", { class: "field-inline" }, symbols, "símbolos"),
+      el("label", { class: "field-inline" }, symbols, "symbols"),
       entropy,
     ),
   );
@@ -1066,31 +1066,31 @@ function openSecretDialog(project, environment, secret = null) {
   const body = el(
     "div",
     { class: "stack" },
-    el("div", { class: "field" }, el("label", {}, "Chave"), key),
+    el("div", { class: "field" }, el("label", {}, "Key"), key),
     el(
       "div",
       { class: "field" },
-      el("label", {}, editing ? "Novo valor" : "Valor"),
+      el("label", {}, editing ? "New value" : "Value"),
       el("div", { class: "row" }, value, reveal),
     ),
     editing ? null : generator,
-    el("p", { class: "note info" }, "O valor é criptografado antes de tocar o SQLite. Ele só sai do cofre em reveal ou export, ambos auditados."),
+    el("p", { class: "note info" }, "The value is encrypted before it touches SQLite. It only leaves the vault via reveal or export, both audited."),
   );
 
   openModal({
-    title: `${editing ? "Editar" : "Novo"} segredo · ${project.slug}/${environment}`,
+    title: `${editing ? "Edit" : "New"} secret · ${project.slug}/${environment}`,
     body,
-    submitLabel: editing ? "Atualizar" : "Salvar",
+    submitLabel: editing ? "Update" : "Save",
     onSubmit: async () => {
       if (!key.value.trim() || !value.value) {
-        toast("Preencha chave e valor", "error");
+        toast("Fill in key and value", "error");
         return false;
       }
       await api(`/v1/projects/${project.id}/secrets`, {
         method: "PUT",
         body: { environment, key: key.value.trim(), value: value.value },
       });
-      toast(editing ? "Segredo atualizado" : "Segredo criado");
+      toast(editing ? "Secret updated" : "Secret created");
       state.environment = environment;
       await refreshProject();
       return true;
@@ -1100,16 +1100,16 @@ function openSecretDialog(project, environment, secret = null) {
 
 function openDeleteSecret(project, environment, secret) {
   openModal({
-    title: "Excluir segredo",
+    title: "Delete secret",
     danger: true,
-    submitLabel: "Excluir",
-    body: el("p", {}, `Remover ${secret.key} de ${project.slug}/${environment}? Esta ação não pode ser desfeita.`),
+    submitLabel: "Delete",
+    body: el("p", {}, `Remove ${secret.key} from ${project.slug}/${environment}? This cannot be undone.`),
     onSubmit: async () => {
       await api(
         `/v1/projects/${project.id}/secrets/${encodeURIComponent(secret.key)}?environment=${encodeURIComponent(environment)}`,
         { method: "DELETE" },
       );
-      toast("Segredo excluído");
+      toast("Secret deleted");
       await refreshProject();
       return true;
     },
@@ -1118,8 +1118,8 @@ function openDeleteSecret(project, environment, secret) {
 
 async function openRevealDialog(project, environment, secret) {
   const passphrase = await askPassphrase(
-    `Revelar ${secret.key}`,
-    "A passphrase é revalidada e o acesso fica registrado na auditoria.",
+    `Reveal ${secret.key}`,
+    "The passphrase is re-validated and the access is recorded in the audit log.",
   );
   if (!passphrase) return;
   try {
@@ -1128,13 +1128,13 @@ async function openRevealDialog(project, environment, secret) {
       body: { environment, passphrase },
     });
     const code = el("div", { class: "code-block" }, data.value);
-    const copy = el("button", { class: "btn small", type: "button" }, "Copiar");
+    const copy = el("button", { class: "btn small", type: "button" }, "Copy");
     copy.addEventListener("click", () => copyText(data.value));
-    const timerLabel = el("span", { class: "muted" }, "oculta em 60s");
+    const timerLabel = el("span", { class: "muted" }, "hidden in 60s");
     const timer = setTimeout(() => {
-      code.textContent = "•••••••• (valor ocultado)";
+      code.textContent = "•••••••• (value hidden)";
       copy.disabled = true;
-      timerLabel.textContent = "valor ocultado";
+      timerLabel.textContent = "value hidden";
     }, 60000);
     dialog().addEventListener("close", () => clearTimeout(timer), { once: true });
     openModal({
@@ -1142,11 +1142,11 @@ async function openRevealDialog(project, environment, secret) {
       body: el(
         "div",
         { class: "stack" },
-        el("p", { class: "note" }, "Não cole este valor em conversas, issues ou logs. Se ele aparecer em algum lugar, rotacione."),
+        el("p", { class: "note" }, "Do not paste this value into chats, issues or logs. If it shows up anywhere, rotate it."),
         code,
         el("div", { class: "row" }, copy, timerLabel),
       ),
-      submitLabel: "Fechar",
+      submitLabel: "Close",
       hideCancel: true,
     });
   } catch (error) {
@@ -1156,31 +1156,31 @@ async function openRevealDialog(project, environment, secret) {
 
 function openImportDialog(project, environment) {
   const file = el("input", { type: "file", accept: ".env,.txt,text/plain" });
-  const text = el("textarea", { rows: "8", placeholder: "ou cole aqui o conteúdo do .env" });
+  const text = el("textarea", { rows: "8", placeholder: "or paste the .env content here" });
   const target = el("input", { value: environment });
   const replace = el("input", { type: "checkbox" });
   const body = el(
     "div",
     { class: "stack" },
-    el("div", { class: "field" }, el("label", {}, "Arquivo .env"), file),
-    el("div", { class: "field" }, el("label", {}, "Conteúdo"), text),
+    el("div", { class: "field" }, el("label", {}, ".env file"), file),
+    el("div", { class: "field" }, el("label", {}, "Content"), text),
     el(
       "div",
       { class: "grid", style: "grid-template-columns: 1fr 1fr" },
-      el("div", { class: "field" }, el("label", {}, "Ambiente de destino"), target),
-      el("label", { class: "field-inline", style: "align-self:end;padding-bottom:9px" }, replace, "Sobrescrever chaves existentes"),
+      el("div", { class: "field" }, el("label", {}, "Target environment"), target),
+      el("label", { class: "field-inline", style: "align-self:end;padding-bottom:9px" }, replace, "Overwrite existing keys"),
     ),
-    el("p", { class: "note info" }, "O parser aceita comentários, export, aspas simples/duplas e nunca executa o conteúdo."),
+    el("p", { class: "note info" }, "The parser accepts comments, export, single/double quotes and never executes the content."),
   );
   openModal({
-    title: `Importar .env · ${project.slug}`,
+    title: `Import .env · ${project.slug}`,
     body,
-    submitLabel: "Importar",
+    submitLabel: "Import",
     onSubmit: async () => {
       let content = text.value;
       if (file.files?.length) content = await file.files[0].text();
       if (!content.trim()) {
-        toast("Selecione um arquivo ou cole o conteúdo", "error");
+        toast("Select a file or paste the content", "error");
         return false;
       }
       const result = await api(`/v1/projects/${project.id}/import`, {
@@ -1192,7 +1192,7 @@ function openImportDialog(project, environment) {
         },
       });
       toast(
-        `${result.created} criados, ${result.updated} atualizados, ${result.skipped} ignorados`,
+        `${result.created} created, ${result.updated} updated, ${result.skipped} skipped`,
       );
       state.environment = target.value.trim().toLowerCase();
       await refreshProject();
@@ -1204,8 +1204,8 @@ function openImportDialog(project, environment) {
 
 async function openExportDialog(project, environment) {
   const passphrase = await askPassphrase(
-    `Exportar ${project.slug}/${environment}`,
-    "Será gerado um .env temporário. Prefira `envvault run` para não deixar valores em disco.",
+    `Export ${project.slug}/${environment}`,
+    "A temporary .env will be generated. Prefer `envvault run` to avoid leaving values on disk.",
   );
   if (!passphrase) return;
   try {
@@ -1220,7 +1220,7 @@ async function openExportDialog(project, environment) {
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
-    toast("Arquivo exportado. Apague-o depois de usar.");
+    toast("File exported. Delete it after use.");
   } catch (error) {
     toast(error.message, "error");
   }
@@ -1229,9 +1229,9 @@ async function openExportDialog(project, environment) {
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
-    toast("Copiado para a área de transferência.");
+    toast("Copied to the clipboard.");
   } catch {
-    toast("Não foi possível copiar", "error");
+    toast("Could not copy", "error");
   }
 }
 
@@ -1239,13 +1239,13 @@ async function copyText(text) {
 // credentials
 // ---------------------------------------------------------------------------
 const CREDENTIAL_CATEGORIES = [
-  ["hosting", "Hospedagem"],
-  ["dns", "DNS / domínios"],
-  ["email", "E-mail"],
-  ["smtp", "SMTP / envio"],
+  ["hosting", "Hosting"],
+  ["dns", "DNS / domains"],
+  ["email", "Email"],
+  ["smtp", "SMTP / sending"],
   ["api", "API / token"],
-  ["database", "Banco de dados"],
-  ["other", "Outra"],
+  ["database", "Database"],
+  ["other", "Other"],
 ];
 
 function credentialCategoryLabel(value) {
@@ -1263,38 +1263,38 @@ async function refreshCredentialViews() {
 
 async function renderCredentials() {
   setHeader(
-    "Credenciais",
-    "Logins de serviços externos, globais ou por projeto (cliente). Os campos sensíveis só saem do cofre em reveal auditado.",
+    "Credentials",
+    "Logins for external services, global or per project (client). Sensitive fields only leave the vault via audited reveal.",
     [
-      { label: "Atualizar", onClick: renderCredentials },
-      { label: "Nova credencial", primary: true, onClick: () => openCredentialDialog() },
+      { label: "Refresh", onClick: renderCredentials },
+      { label: "New credential", primary: true, onClick: () => openCredentialDialog() },
     ],
   );
   if (!state.projects.length) await loadProjects();
   const filter = state.credentialFilter;
   const query = el("input", {
     value: filter.query,
-    placeholder: "buscar por nome ou categoria",
+    placeholder: "search by name or category",
     autocomplete: "off",
   });
   const category = el(
     "select",
     {},
-    el("option", { value: "" }, "todas as categorias"),
+    el("option", { value: "" }, "all categories"),
     ...CREDENTIAL_CATEGORIES.map(([slug, label]) => el("option", { value: slug }, label)),
   );
   category.value = filter.category;
   const project = el(
     "select",
     {},
-    el("option", { value: "" }, "todos os escopos"),
-    el("option", { value: "__global__" }, "somente globais"),
+    el("option", { value: "" }, "all scopes"),
+    el("option", { value: "__global__" }, "global only"),
     ...state.projects.map((item) =>
-      el("option", { value: item.id }, `projeto: ${item.slug}`),
+      el("option", { value: item.id }, `project: ${item.slug}`),
     ),
   );
   project.value = filter.project;
-  const apply = el("button", { class: "btn", type: "button" }, "Filtrar");
+  const apply = el("button", { class: "btn", type: "button" }, "Filter");
   apply.addEventListener("click", () => {
     state.credentialFilter = {
       query: query.value.trim(),
@@ -1329,27 +1329,27 @@ async function renderCredentials() {
       el(
         "button",
         { class: "btn small", type: "button", onclick: () => openRevealCredential(credential) },
-        "Revelar",
+        "Reveal",
       ),
       el(
         "button",
         { class: "btn small", type: "button", onclick: () => openCredentialDialog(credential) },
-        "Editar",
+        "Edit",
       ),
       el(
         "button",
         { class: "btn small danger", type: "button", onclick: () => openDeleteCredential(credential) },
-        "Excluir",
+        "Delete",
       ),
     ),
   ]);
 
   const content = data.items.length
-    ? table(["nome", "categoria", "escopo", "versão", "atualizado", ""], rows)
+    ? table(["name", "category", "scope", "version", "updated", ""], rows)
     : emptyState(
-        "Nenhuma credencial ainda",
-        "Guarde logins de Hostinger, Cloudflare, Gmail, SMTP e outros serviços. Use o escopo global para o que é seu e o projeto para cada cliente.",
-        "Adicionar credencial",
+        "No credentials yet",
+        "Store logins for Hostinger, Cloudflare, Gmail, SMTP and other services. Use the global scope for your own and a project for each client.",
+        "Add credential",
         () => openCredentialDialog(),
       );
 
@@ -1362,13 +1362,13 @@ async function renderCredentials() {
       project,
       apply,
       el("div", { class: "spacer" }),
-      el("span", { class: "muted" }, `${data.total} credenciais`),
+      el("span", { class: "muted" }, `${data.total} credentials`),
     ),
     content,
     el(
       "p",
       { class: "note info" },
-      "Nome, categoria e escopo ficam visíveis para busca. Usuário, senha, URL e notas são criptografados juntos e nunca aparecem em listagens. Tokens de agente não têm acesso a esta área.",
+      "Name, category and scope are visible for search. Username, password, URL and notes are encrypted together and never appear in listings. Agent tokens have no access to this area.",
     ),
   );
 }
@@ -1379,8 +1379,8 @@ async function openCredentialDialog(credential = null, defaultProject = null) {
   let current = { username: "", password: "", url: "", notes: "" };
   if (editing) {
     const passphrase = await askPassphrase(
-      `Editar ${credential.name}`,
-      "Para editar os campos criptografados a passphrase é revalidada. O acesso fica na auditoria.",
+      `Edit ${credential.name}`,
+      "To edit the encrypted fields the passphrase is re-validated. The access is recorded in the audit log.",
     );
     if (!passphrase) return;
     try {
@@ -1409,32 +1409,32 @@ async function openCredentialDialog(credential = null, defaultProject = null) {
   const project = el(
     "select",
     {},
-    el("option", { value: "" }, "Global (todos os projetos)"),
+    el("option", { value: "" }, "Global (all projects)"),
     ...state.projects.map((item) =>
-      el("option", { value: item.id }, `Projeto: ${item.slug} — ${item.name}`),
+      el("option", { value: item.id }, `Project: ${item.slug} — ${item.name}`),
     ),
   );
   project.value = credential?.project?.id || defaultProject?.id || "";
   const username = el("input", {
     value: current.username || "",
-    placeholder: "usuario@exemplo.com",
+    placeholder: "user@example.com",
     autocomplete: "off",
   });
   const password = el("input", {
     type: "password",
     value: current.password || "",
-    placeholder: "senha ou token",
+    placeholder: "password or token",
     autocomplete: "new-password",
   });
-  const url = el("input", { value: current.url || "", placeholder: "https://painel.servico.com" });
-  const notes = el("textarea", { rows: "4", placeholder: "observações, escopo do token, etc." });
+  const url = el("input", { value: current.url || "", placeholder: "https://dashboard.service.com" });
+  const notes = el("textarea", { rows: "4", placeholder: "notes, token scope, etc." });
   notes.value = current.notes || "";
 
-  const reveal = el("button", { class: "btn small", type: "button" }, "Mostrar");
+  const reveal = el("button", { class: "btn small", type: "button" }, "Show");
   reveal.addEventListener("click", () => {
     const hidden = password.type === "password";
     password.type = hidden ? "text" : "password";
-    reveal.textContent = hidden ? "Ocultar" : "Mostrar";
+    reveal.textContent = hidden ? "Hide" : "Show";
   });
 
   const length = el("input", {
@@ -1445,7 +1445,7 @@ async function openCredentialDialog(credential = null, defaultProject = null) {
     style: "width:90px",
   });
   const entropy = el("span", { class: "muted" }, "");
-  const generate = el("button", { class: "btn small", type: "button" }, "Gerar senha");
+  const generate = el("button", { class: "btn small", type: "button" }, "Generate password");
   generate.addEventListener("click", async () => {
     generate.disabled = true;
     try {
@@ -1454,9 +1454,9 @@ async function openCredentialDialog(credential = null, defaultProject = null) {
         body: { length: Number(length.value) },
       });
       password.type = "text";
-      reveal.textContent = "Ocultar";
+      reveal.textContent = "Hide";
       password.value = data.password;
-      entropy.textContent = `~${data.entropy_bits} bits · ${data.alphabet_size} símbolos`;
+      entropy.textContent = `~${data.entropy_bits} bits · ${data.alphabet_size} symbols`;
     } catch (error) {
       toast(error.message, "error");
     } finally {
@@ -1470,30 +1470,30 @@ async function openCredentialDialog(credential = null, defaultProject = null) {
     el(
       "div",
       { class: "grid", style: "grid-template-columns: 1.4fr 1fr" },
-      el("div", { class: "field" }, el("label", {}, "Nome"), name),
-      el("div", { class: "field" }, el("label", {}, "Categoria"), category),
+      el("div", { class: "field" }, el("label", {}, "Name"), name),
+      el("div", { class: "field" }, el("label", {}, "Category"), category),
     ),
     el(
       "div",
       { class: "field" },
-      el("label", {}, "Escopo"),
+      el("label", {}, "Scope"),
       project,
       el(
         "p",
         { class: "muted" },
-        "Global = compartilhada por todos os projetos. Projeto = específica de um cliente.",
+        "Global = shared by all projects. Project = specific to one client.",
       ),
     ),
     el(
       "div",
       { class: "grid", style: "grid-template-columns: 1fr 1fr" },
-      el("div", { class: "field" }, el("label", {}, "Usuário / e-mail"), username),
-      el("div", { class: "field" }, el("label", {}, "URL do painel"), url),
+      el("div", { class: "field" }, el("label", {}, "Username / email"), username),
+      el("div", { class: "field" }, el("label", {}, "Dashboard URL"), url),
     ),
     el(
       "div",
       { class: "field" },
-      el("label", {}, "Senha / token"),
+      el("label", {}, "Password / token"),
       el("div", { class: "row" }, password, reveal),
     ),
     el(
@@ -1502,27 +1502,27 @@ async function openCredentialDialog(credential = null, defaultProject = null) {
       el(
         "div",
         { class: "row" },
-        el("strong", {}, "Gerador embutido"),
-        el("label", { class: "field-inline" }, "Tamanho", length),
+        el("strong", {}, "Built-in generator"),
+        el("label", { class: "field-inline" }, "Length", length),
         generate,
         entropy,
       ),
     ),
-    el("div", { class: "field" }, el("label", {}, "Notas"), notes),
+    el("div", { class: "field" }, el("label", {}, "Notes"), notes),
     el(
       "p",
       { class: "note info" },
-      "Usuário, senha, URL e notas são criptografados em um único payload AES-256-GCM. Apenas nome e categoria ficam visíveis.",
+      "Username, password, URL and notes are encrypted in a single AES-256-GCM payload. Only name and category are visible.",
     ),
   );
 
   openModal({
-    title: editing ? `Editar credencial · ${credential.name}` : "Nova credencial",
+    title: editing ? `Edit credential · ${credential.name}` : "New credential",
     body,
-    submitLabel: editing ? "Salvar" : "Criar",
+    submitLabel: editing ? "Save" : "Create",
     onSubmit: async () => {
       if (!name.value.trim()) {
-        toast("Informe um nome", "error");
+        toast("Enter a name", "error");
         return false;
       }
       const payload = {
@@ -1536,10 +1536,10 @@ async function openCredentialDialog(credential = null, defaultProject = null) {
       };
       if (editing) {
         await api(`/v1/credentials/${credential.id}`, { method: "PUT", body: payload });
-        toast("Credencial atualizada");
+        toast("Credential updated");
       } else {
         await api("/v1/credentials", { method: "POST", body: payload });
-        toast("Credencial criada");
+        toast("Credential created");
       }
       await refreshCredentialViews();
       return true;
@@ -1549,8 +1549,8 @@ async function openCredentialDialog(credential = null, defaultProject = null) {
 
 async function openRevealCredential(credential) {
   const passphrase = await askPassphrase(
-    `Revelar ${credential.name}`,
-    "A passphrase é revalidada e o acesso fica registrado na auditoria.",
+    `Reveal ${credential.name}`,
+    "The passphrase is re-validated and the access is recorded in the audit log.",
   );
   if (!passphrase) return;
   try {
@@ -1558,30 +1558,30 @@ async function openRevealCredential(credential) {
       method: "POST",
       body: { passphrase },
     });
-    const password = el("div", { class: "code-block" }, data.password || "(sem senha salva)");
-    const copy = el("button", { class: "btn small", type: "button" }, "Copiar senha");
+    const password = el("div", { class: "code-block" }, data.password || "(no saved password)");
+    const copy = el("button", { class: "btn small", type: "button" }, "Copy password");
     copy.disabled = !data.password;
     copy.addEventListener("click", () => copyText(data.password));
-    const timerLabel = el("span", { class: "muted" }, "oculta em 60s");
+    const timerLabel = el("span", { class: "muted" }, "hidden in 60s");
     const timer = setTimeout(() => {
-      password.textContent = "•••••••• (senha ocultada)";
+      password.textContent = "•••••••• (password hidden)";
       copy.disabled = true;
-      timerLabel.textContent = "senha ocultada";
+      timerLabel.textContent = "password hidden";
     }, 60000);
     dialog().addEventListener("close", () => clearTimeout(timer), { once: true });
 
     const details = el(
       "dl",
       { class: "kv" },
-      el("dt", {}, "Escopo"),
-      el("dd", {}, data.project ? `projeto ${data.project.slug}` : "global"),
-      el("dt", {}, "Categoria"),
+      el("dt", {}, "Scope"),
+      el("dd", {}, data.project ? `project ${data.project.slug}` : "global"),
+      el("dt", {}, "Category"),
       el("dd", {}, credentialCategoryLabel(data.category)),
-      el("dt", {}, "Usuário"),
+      el("dt", {}, "Username"),
       el("dd", {}, data.username || "—"),
       el("dt", {}, "URL"),
       el("dd", {}, data.url || "—"),
-      el("dt", {}, "Notas"),
+      el("dt", {}, "Notes"),
       el("dd", {}, data.notes || "—"),
     );
 
@@ -1593,13 +1593,13 @@ async function openRevealCredential(credential) {
         el(
           "p",
           { class: "note" },
-          "Não cole estes valores em conversas, issues ou logs. Se aparecerem em algum lugar, rotacione.",
+          "Do not paste these values into chats, issues or logs. If they show up anywhere, rotate them.",
         ),
         details,
-        el("div", { class: "field" }, el("label", {}, "Senha / token"), password),
+        el("div", { class: "field" }, el("label", {}, "Password / token"), password),
         el("div", { class: "row" }, copy, timerLabel),
       ),
-      submitLabel: "Fechar",
+      submitLabel: "Close",
       hideCancel: true,
     });
   } catch (error) {
@@ -1609,17 +1609,17 @@ async function openRevealCredential(credential) {
 
 function openDeleteCredential(credential) {
   openModal({
-    title: "Excluir credencial",
+    title: "Delete credential",
     danger: true,
-    submitLabel: "Excluir",
+    submitLabel: "Delete",
     body: el(
       "p",
       {},
-      `Remover ${credential.name} (${credentialCategoryLabel(credential.category)})? Esta ação não pode ser desfeita.`,
+      `Remove ${credential.name} (${credentialCategoryLabel(credential.category)})? This cannot be undone.`,
     ),
     onSubmit: async () => {
       await api(`/v1/credentials/${credential.id}`, { method: "DELETE" });
-      toast("Credencial excluída");
+      toast("Credential deleted");
       await refreshCredentialViews();
       return true;
     },
@@ -1630,9 +1630,9 @@ function openDeleteCredential(credential) {
 // tokens
 // ---------------------------------------------------------------------------
 async function renderTokens() {
-  setHeader("Tokens", "Credenciais de agente com escopo restrito. Elas nunca podem revelar valores.", [
-    { label: "Atualizar", onClick: renderTokens },
-    { label: "Novo token", primary: true, onClick: () => openTokenDialog() },
+  setHeader("Tokens", "Agent credentials with restricted scope. They can never reveal values.", [
+    { label: "Refresh", onClick: renderTokens },
+    { label: "New token", primary: true, onClick: () => openTokenDialog() },
   ]);
   const [tokens, projects] = await Promise.all([api("/v1/tokens"), loadProjects()]);
   const items = tokens.items;
@@ -1641,16 +1641,16 @@ async function renderTokens() {
     token.project.slug,
     el("div", { class: "row" }, ...token.environments.map((env) => el("span", { class: "tag" }, env))),
     [
-      token.can_list ? "listar" : null,
-      token.can_inject ? "executar" : null,
+      token.can_list ? "list" : null,
+      token.can_inject ? "run" : null,
     ].filter(Boolean).join(" · "),
     token.any_command
-      ? el("span", { class: "badge warn" }, "qualquer comando")
+      ? el("span", { class: "badge warn" }, "any command")
       : token.allowed_commands.length
         ? el("span", { class: "mono muted" }, token.allowed_commands.join(", "))
-        : el("span", { class: "badge err" }, token.can_inject ? "recriar (sem comandos)" : "—"),
+        : el("span", { class: "badge err" }, token.can_inject ? "recreate (no commands)" : "—"),
     fmtDate(token.last_used_at),
-    badge(token.active ? "ativo" : "revogado", token.active ? "ok" : "err"),
+    badge(token.active ? "active" : "revoked", token.active ? "ok" : "err"),
     token.active
       ? el(
           "button",
@@ -1659,19 +1659,19 @@ async function renderTokens() {
             type: "button",
             onclick: () => openRevokeToken(token),
           },
-          "Revogar",
+          "Revoke",
         )
       : el("span", { class: "muted" }, "—"),
   ]);
   const content = items.length
     ? table(
-        ["nome", "projeto", "ambientes", "permissões", "comandos", "último uso", "status", ""],
+        ["name", "project", "environments", "permissions", "commands", "last used", "status", ""],
         rows,
       )
     : emptyState(
-        "Nenhum token criado",
-        "Crie um token para o Claude executar comandos com segredos sem receber os valores.",
-        "Criar token",
+        "No tokens created",
+        "Create a token so Claude can run commands with secrets without receiving the values.",
+        "Create token",
         () => openTokenDialog(),
       );
   view().replaceChildren(
@@ -1679,7 +1679,7 @@ async function renderTokens() {
     el(
       "p",
       { class: "note info" },
-      "O token não dá acesso ao dashboard nem a reveal/export. Prefira restringir ambientes e prefixos de comando; um token sem restrição pode executar qualquer argv.",
+      "The token gives no access to the dashboard or to reveal/export. Prefer restricting environments and command prefixes; an unrestricted token can run any argv.",
     ),
   );
 }
@@ -1687,7 +1687,7 @@ async function renderTokens() {
 function openTokenDialog() {
   const projects = state.projects.length ? state.projects : [];
   if (!projects.length) {
-    toast("Registre um projeto antes de criar tokens", "error");
+    toast("Register a project before creating tokens", "error");
     return;
   }
   const project = el(
@@ -1716,39 +1716,39 @@ function openTokenDialog() {
   const body = el(
     "div",
     { class: "stack" },
-    el("div", { class: "field" }, el("label", {}, "Projeto"), project),
-    el("div", { class: "field" }, el("label", {}, "Nome do token"), name),
-    el("div", { class: "field" }, el("label", {}, "Ambientes permitidos"), environments),
+    el("div", { class: "field" }, el("label", {}, "Project"), project),
+    el("div", { class: "field" }, el("label", {}, "Token name"), name),
+    el("div", { class: "field" }, el("label", {}, "Allowed environments"), environments),
     el(
       "div",
       { class: "row" },
-      el("label", { class: "field-inline" }, canList, "Listar nomes de chaves"),
-      el("label", { class: "field-inline" }, canInject, "Executar com injeção"),
+      el("label", { class: "field-inline" }, canList, "List key names"),
+      el("label", { class: "field-inline" }, canInject, "Run with injection"),
     ),
     el(
       "div",
       { class: "field" },
-      el("label", {}, "Comandos permitidos (um por linha, comparados palavra por palavra)"),
+      el("label", {}, "Allowed commands (one per line, compared word by word)"),
       commands,
     ),
-    el("label", { class: "field-inline" }, anyCommand, "Permitir qualquer comando (não recomendado)"),
-    el("p", { class: "note" }, "Com \"qualquer comando\", o token pode executar qualquer argv — inclusive programas que imprimem o ambiente. A redação é a última linha de defesa, não a única."),
+    el("label", { class: "field-inline" }, anyCommand, "Allow any command (not recommended)"),
+    el("p", { class: "note" }, "With \"any command\", the token can run any argv — including programs that print the environment. Redaction is the last line of defense, not the only one."),
   );
   openModal({
-    title: "Novo token de agente",
+    title: "New agent token",
     body,
-    submitLabel: "Criar token",
+    submitLabel: "Create token",
     onSubmit: async () => {
       const envs = environments.value
         .split(",")
         .map((item) => item.trim().toLowerCase())
         .filter(Boolean);
       if (!envs.length) {
-        toast("Informe ao menos um ambiente", "error");
+        toast("Enter at least one environment", "error");
         return false;
       }
       if (!canList.checked && !canInject.checked) {
-        toast("O token precisa de ao menos uma permissão", "error");
+        toast("The token needs at least one permission", "error");
         return false;
       }
       const allowed = commands.value
@@ -1756,11 +1756,11 @@ function openTokenDialog() {
         .map((item) => item.trim())
         .filter(Boolean);
       if (canInject.checked && !allowed.length && !anyCommand.checked) {
-        toast("Informe ao menos um comando ou marque \"qualquer comando\"", "error");
+        toast("Enter at least one command or check \"any command\"", "error");
         return false;
       }
       if (anyCommand.checked && allowed.length) {
-        toast("Escolha uma lista de comandos ou \"qualquer comando\", não os dois", "error");
+        toast("Choose a command list or \"any command\", not both", "error");
         return false;
       }
       const result = await api("/v1/tokens", {
@@ -1784,13 +1784,13 @@ function openTokenDialog() {
 
 function openRevokeToken(token) {
   openModal({
-    title: "Revogar token",
+    title: "Revoke token",
     danger: true,
-    submitLabel: "Revogar",
-    body: el("p", {}, `O token ${token.name} deixa de funcionar imediatamente. Execuções em andamento são encerradas.`),
+    submitLabel: "Revoke",
+    body: el("p", {}, `Token ${token.name} stops working immediately. Running executions are terminated.`),
     onSubmit: async () => {
       await api(`/v1/tokens/${token.id}`, { method: "DELETE" });
-      toast("Token revogado");
+      toast("Token revoked");
       await renderTokens();
       return true;
     },
@@ -1800,25 +1800,25 @@ function openRevokeToken(token) {
 function showTokenCreated(result) {
   const token = result.token;
   const code = el("div", { class: "code-block" }, token);
-  const copy = el("button", { class: "btn small", type: "button" }, "Copiar token");
+  const copy = el("button", { class: "btn small", type: "button" }, "Copy token");
   copy.addEventListener("click", () => copyText(token));
   openModal({
-    title: "Token criado — copie agora",
+    title: "Token created — copy it now",
     body: el(
       "div",
       { class: "stack" },
-      el("p", { class: "note" }, "Este valor aparece uma única vez. Se perder, revogue e crie outro."),
+      el("p", { class: "note" }, "This value is shown only once. If you lose it, revoke it and create another."),
       code,
       el("div", { class: "row" }, copy),
-      el("p", { class: "muted" }, "No ambiente do agente:"),
+      el("p", { class: "muted" }, "In the agent environment:"),
       el("div", { class: "code-block" }, `export ENVVAULT_TOKEN=${token}`),
       el(
         "p",
         { class: "muted" },
-        `Escopo: ${result.item.project.slug} · ${result.item.environments.join(", ")}. Sem acesso a reveal/export.`,
+        `Scope: ${result.item.project.slug} · ${result.item.environments.join(", ")}. No access to reveal/export.`,
       ),
     ),
-    submitLabel: "Já copiei",
+    submitLabel: "I have copied it",
     hideCancel: true,
   });
 }
@@ -1827,30 +1827,30 @@ function showTokenCreated(result) {
 // audit
 // ---------------------------------------------------------------------------
 async function renderAudit() {
-  setHeader("Auditoria", "Registro encadeado por hash: cada evento sela o anterior.", [
-    { label: "Verificar integridade", onClick: async () => {
+  setHeader("Audit log", "Hash-chained log: each event seals the previous one.", [
+    { label: "Verify integrity", onClick: async () => {
         try {
           const result = await api("/v1/audit/verify");
-          if (result.valid) toast("Cadeia íntegra.");
-          else toast(`Cadeia quebrada no id ${result.first_bad_id}`, "error");
+          if (result.valid) toast("Chain intact.");
+          else toast(`Chain broken at id ${result.first_bad_id}`, "error");
         } catch (error) {
           toast(error.message, "error");
         }
       } },
-    { label: "Atualizar", onClick: renderAudit },
+    { label: "Refresh", onClick: renderAudit },
   ]);
   if (!state.projects.length) await loadProjects();
   const filter = state.auditFilter;
   const project = el(
     "select",
     {},
-    el("option", { value: "" }, "todos os projetos"),
+    el("option", { value: "" }, "all projects"),
     ...state.projects.map((item) => el("option", { value: item.slug }, item.slug)),
   );
   project.value = filter.project;
-  const action = el("input", { value: filter.action, placeholder: "ação, ex.: secret." });
+  const action = el("input", { value: filter.action, placeholder: "action, e.g. secret." });
   const limit = el("input", { type: "number", min: "1", max: "500", value: String(filter.limit), style: "width:110px" });
-  const apply = el("button", { class: "btn", type: "button" }, "Filtrar");
+  const apply = el("button", { class: "btn", type: "button" }, "Filter");
   apply.addEventListener("click", () => {
     state.auditFilter = { project: project.value, action: action.value.trim(), limit: Number(limit.value) || 100 };
     renderAudit();
@@ -1869,24 +1869,24 @@ async function renderAudit() {
     badge(entry.result, entry.result === "ok" ? "ok" : "err"),
   ]);
   const content = data.items.length
-    ? table(["quando", "ator", "ação", "projeto", "chaves", "comando", "resultado"], rows, {
+    ? table(["when", "actor", "action", "project", "keys", "command", "result"], rows, {
         onRowClick: (tr) => {
           const index = Array.from(tr.parentNode.children).indexOf(tr);
           openAuditDetail(data.items[index]);
         },
       })
-    : el("p", { class: "muted" }, "Nenhum evento para este filtro.");
+    : el("p", { class: "muted" }, "No events for this filter.");
   view().replaceChildren(
-    el("div", { class: "card row" }, project, action, limit, apply, el("div", { class: "spacer" }), el("span", { class: "muted" }, `${data.total} eventos`)),
+    el("div", { class: "card row" }, project, action, limit, apply, el("div", { class: "spacer" }), el("span", { class: "muted" }, `${data.total} events`)),
     content,
   );
 }
 
 function openAuditDetail(entry) {
   openModal({
-    title: `Evento #${entry.id}`,
+    title: `Event #${entry.id}`,
     body: el("pre", { class: "code-block" }, JSON.stringify(entry, null, 2)),
-    submitLabel: "Fechar",
+    submitLabel: "Close",
     hideCancel: true,
   });
 }
@@ -1895,11 +1895,11 @@ function openAuditDetail(entry) {
 // settings
 // ---------------------------------------------------------------------------
 async function renderSettings() {
-  setHeader("Configurações", "Tempo de bloqueio, passphrase e informações da instância.", [
-    { label: "Bloquear agora", danger: true, onClick: async () => {
+  setHeader("Settings", "Lock timeout, passphrase and instance information.", [
+    { label: "Lock now", danger: true, onClick: async () => {
         try {
           await api("/v1/auth/lock", { method: "POST" });
-          showLogin("Cofre bloqueado.");
+          showLogin("Vault locked.");
         } catch (error) {
           toast(error.message, "error");
         }
@@ -1908,14 +1908,14 @@ async function renderSettings() {
   const data = await api("/v1/settings");
   const timeout = el("input", { type: "number", min: "1", max: "1440", value: String(data.lock_timeout_minutes), style: "max-width:140px" });
   const maxUnlock = el("input", { type: "number", min: "1", max: "168", value: String(data.max_unlock_hours), style: "max-width:140px" });
-  const saveTimeout = el("button", { class: "btn primary", type: "button" }, "Salvar");
+  const saveTimeout = el("button", { class: "btn primary", type: "button" }, "Save");
   saveTimeout.addEventListener("click", async () => {
     try {
       await api("/v1/settings", {
         method: "PUT",
         body: { lock_timeout_minutes: Number(timeout.value), max_unlock_hours: Number(maxUnlock.value) },
       });
-      toast("Timeout atualizado");
+      toast("Timeout updated");
       await renderSettings();
     } catch (error) {
       toast(error.message, "error");
@@ -1925,14 +1925,14 @@ async function renderSettings() {
   const current = el("input", { type: "password", autocomplete: "current-password" });
   const next = el("input", { type: "password", autocomplete: "new-password" });
   const confirm = el("input", { type: "password", autocomplete: "new-password" });
-  const change = el("button", { class: "btn primary", type: "button" }, "Trocar passphrase");
+  const change = el("button", { class: "btn primary", type: "button" }, "Change passphrase");
   change.addEventListener("click", async () => {
     if (next.value !== confirm.value) {
-      toast("A confirmação não confere", "error");
+      toast("The confirmation does not match", "error");
       return;
     }
     if (next.value.length < 10) {
-      toast("Use pelo menos 10 caracteres", "error");
+      toast("Use at least 10 characters", "error");
       return;
     }
     change.disabled = true;
@@ -1942,7 +1942,7 @@ async function renderSettings() {
         body: { current: current.value, new: next.value },
       });
       current.value = next.value = confirm.value = "";
-      toast("Passphrase alterada");
+      toast("Passphrase changed");
     } catch (error) {
       toast(error.message, "error");
     } finally {
@@ -1954,36 +1954,36 @@ async function renderSettings() {
     el(
       "div",
       { class: "grid", style: "grid-template-columns: 1fr 1fr" },
-      section("Bloqueio automático", [
-        el("div", { class: "field" }, el("label", {}, "Minutos até bloquear"), timeout),
-        el("div", { class: "field" }, el("label", {}, "Máximo de horas desbloqueado (mesmo em uso)"), maxUnlock),
+      section("Automatic lock", [
+        el("div", { class: "field" }, el("label", {}, "Minutes until lock"), timeout),
+        el("div", { class: "field" }, el("label", {}, "Maximum hours unlocked (even while in use)"), maxUnlock),
         el("div", { class: "row" }, saveTimeout),
-        el("p", { class: "muted" }, "Ao bloquear, a chave sai da memória, sessões caem e processos em execução são encerrados."),
+        el("p", { class: "muted" }, "On lock, the key leaves memory, sessions are dropped and running processes are terminated."),
       ]),
-      section("Trocar passphrase", [
-        el("div", { class: "field" }, el("label", {}, "Passphrase atual"), current),
-        el("div", { class: "field" }, el("label", {}, "Nova passphrase"), next),
-        el("div", { class: "field" }, el("label", {}, "Confirmar nova"), confirm),
+      section("Change passphrase", [
+        el("div", { class: "field" }, el("label", {}, "Current passphrase"), current),
+        el("div", { class: "field" }, el("label", {}, "New passphrase"), next),
+        el("div", { class: "field" }, el("label", {}, "Confirm new"), confirm),
         el("div", { class: "row" }, change),
-        el("p", { class: "muted" }, "A chave de dados é re-embrulhada; os segredos não são re-criptografados."),
+        el("p", { class: "muted" }, "The data key is re-wrapped; secrets are not re-encrypted."),
       ]),
     ),
-    section("Instância", [
+    section("Instance", [
       el(
         "dl",
         { class: "kv" },
-        el("dt", {}, "Versão"),
+        el("dt", {}, "Version"),
         el("dd", {}, data.version),
         el("dt", {}, "Home"),
         el("dd", {}, data.home),
-        el("dt", {}, "Banco"),
+        el("dt", {}, "Database"),
         el("dd", {}, data.database),
-        el("dt", {}, "Endereço"),
+        el("dt", {}, "Address"),
         el("dd", {}, `${data.host}:${data.port}`),
-        el("dt", {}, "Estado"),
-        el("dd", {}, data.status.unlocked ? "desbloqueado" : "bloqueado"),
+        el("dt", {}, "Status"),
+        el("dd", {}, data.status.unlocked ? "unlocked" : "locked"),
       ),
-      el("p", { class: "muted" }, "API local: /api/docs · dados criptografados com AES-256-GCM e chave derivada por Argon2id."),
+      el("p", { class: "muted" }, "Local API: /api/docs · data encrypted with AES-256-GCM and a key derived with Argon2id."),
     ]),
   );
 }

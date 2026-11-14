@@ -60,7 +60,7 @@ def test_env_override_wins(tmp_path: Path) -> None:
 def test_loose_permissions_are_rejected(tmp_path: Path) -> None:
     path = tokenstore.save(tmp_path / "home", SLUG, TOKEN)
     path.chmod(0o644)
-    with pytest.raises(tokenstore.TokenStoreError, match="permissões"):
+    with pytest.raises(tokenstore.TokenStoreError, match="permissions"):
         tokenstore.load(tmp_path / "home", SLUG)
 
 
@@ -93,7 +93,7 @@ def test_rejects_path_traversal(tmp_path: Path) -> None:
 
 
 def test_rejects_empty_token(tmp_path: Path) -> None:
-    with pytest.raises(tokenstore.TokenStoreError, match="vazio"):
+    with pytest.raises(tokenstore.TokenStoreError, match="empty"):
         tokenstore.save(tmp_path / "home", SLUG, "   ")
-    with pytest.raises(tokenstore.TokenStoreError, match="vazio"):
+    with pytest.raises(tokenstore.TokenStoreError, match="empty"):
         tokenstore.save(tmp_path / "home", SLUG, "ev_with space")

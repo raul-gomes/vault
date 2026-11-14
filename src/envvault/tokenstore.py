@@ -61,7 +61,7 @@ def _slug(value: str) -> str:
     try:
         return validate_slug(value)
     except ProjectError as exc:
-        raise TokenStoreError(f"slug inválido: {value!r}") from exc
+        raise TokenStoreError(f"invalid slug: {value!r}") from exc
 
 
 def directory(home: Path) -> Path:
@@ -88,10 +88,10 @@ def _ensure_directory(home: Path) -> Path:
 def _check_secure(path: Path) -> None:
     """Refuse symlinks and files readable by group or others."""
     if path.is_symlink():
-        raise TokenStoreError(f"{path} é um symlink; recusando usá-lo")
+        raise TokenStoreError(f"{path} is a symlink; refusing to use it")
     mode = stat.S_IMODE(path.stat().st_mode)
     if mode & 0o077:
-        raise TokenStoreError(f"{path} tem permissões {mode:04o}; rode `chmod 600 {path}`")
+        raise TokenStoreError(f"{path} has permissions {mode:04o}; run `chmod 600 {path}`")
 
 
 def save(
@@ -105,10 +105,10 @@ def save(
     """Write a project token with ``0600`` and return its path."""
     value = token.strip()
     if not value or any(character.isspace() for character in value):
-        raise TokenStoreError("token vazio ou com espaços")
+        raise TokenStoreError("token is empty or contains whitespace")
     path = _ensure_directory(home) / f"{_slug(slug)}{FILE_SUFFIX}"
     if path.is_symlink():
-        raise TokenStoreError(f"{path} é um symlink; recusando usá-lo")
+        raise TokenStoreError(f"{path} is a symlink; refusing to use it")
     payload: dict[str, Any] = {
         "token": value,
         "token_id": token_id,
@@ -119,7 +119,7 @@ def save(
     try:
         descriptor = os.open(path, flags, 0o600)
     except OSError as exc:
-        raise TokenStoreError(f"não consegui gravar {path}: {exc}") from exc
+        raise TokenStoreError(f"could not write {path}: {exc}") from exc
     try:
         os.write(descriptor, json.dumps(payload, separators=(",", ":")).encode("utf-8"))
         os.fsync(descriptor)
@@ -137,16 +137,16 @@ def load(home: Path, slug: str) -> StoredToken | None:
     _check_secure(path)
     raw = path.read_text(encoding="utf-8").strip()
     if not raw:
-        raise TokenStoreError(f"{path} está vazio; recrie o token")
+        raise TokenStoreError(f"{path} is empty; recreate the token")
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
         return StoredToken(value=raw)
     if not isinstance(data, dict) or not isinstance(data.get("token"), str):
-        raise TokenStoreError(f"{path} está corrompido; recrie o token")
+        raise TokenStoreError(f"{path} is corrupted; recreate the token")
     value = data["token"].strip()
     if not value:
-        raise TokenStoreError(f"{path} está corrompido; recrie o token")
+        raise TokenStoreError(f"{path} is corrupted; recreate the token")
     return StoredToken(
         value=value,
         token_id=data.get("token_id") if isinstance(data.get("token_id"), str) else None,

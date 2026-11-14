@@ -1,58 +1,58 @@
-# Árvore de arquivos
+# File tree
 
-Atualizado em 2026-11-13. Responsabilidade de cada arquivo versionado.
+Updated on 2026-11-13. Responsibility of each versioned file.
 
 ```
-.github/workflows/ci.yml     CI: ruff (lint + formato) e pytest com cobertura
-AGENTS.md                    Invariantes de segurança e regras para agentes
-README.md                    Setup, uso diário, segurança, solução de problemas
-pyproject.toml / uv.lock     Projeto Python (hatch), dependências travadas
+.github/workflows/ci.yml     CI: ruff (lint + format) and pytest with coverage
+AGENTS.md                    Security invariants and rules for agents
+README.md                    Setup, daily use, security, troubleshooting
+pyproject.toml / uv.lock     Python project (hatch), locked dependencies
 docs/
   action-plan.md             Ordered action plan (one PR per item)
-  adr/0001-static-ui.md      Decisão: painel web estático, sem bundler/CDN
+  adr/0001-static-ui.md      Decision: static web dashboard, no bundler/CDN
   adr/0002..0005             Same-user boundary, command list, 12 h unlock limit, English
-  analise-inicial.md         Análise de 2026-11-13 (forças, bugs, riscos, ideias)
-  comandos.md                Todos os comandos úteis
-  GLOSSARY.md                Termos do domínio
-  lineage.md                 Schema do SQLite e migrations
-  open-items.md              Itens abertos
-  tree_files.md              Este arquivo
+  baseline-review.md         Review of 2026-11-13 (strengths, bugs, risks, ideas)
+  commands.md                All useful commands
+  GLOSSARY.md                Domain terms
+  lineage.md                 SQLite schema and migrations
+  open-items.md              Open items
+  tree_files.md              This file
 src/envvault/
-  __init__.py                Versão do pacote
-  app.py                     Fábrica FastAPI, guarda de Host, handlers de erro, estáticos
-  cli.py                     CLI Typer `envvault` (todos os comandos)
-  config.py                  Settings a partir de ENVVAULT_* (caminhos, porta, KDF)
-  crypto.py                  Argon2id, embrulho da DEK, AES-256-GCM com AAD
-  daemon.py                  Sobe o uvicorn do daemon
-  db.py                      Engine SQLite (WAL, FK, busy_timeout) e permissões 0600
-  migrate.py                 Upgrade Alembic programático
-  models.py                  Modelos SQLAlchemy
-  passwords.py               Gerador de senhas (CSPRNG)
-  runtime.py                 Estado em memória: DEK, sessões, throttle de login, execuções
-  schemas.py                 Modelos Pydantic de entrada/saída
-  tokenstore.py              Arquivos de token por projeto (0600, recusa symlink)
+  __init__.py                Package version
+  app.py                     FastAPI factory, Host guard, error handlers, static files
+  cli.py                     Typer CLI `envvault` (all commands)
+  config.py                  Settings from ENVVAULT_* (paths, port, KDF)
+  crypto.py                  Argon2id, DEK wrapping, AES-256-GCM with AAD
+  daemon.py                  Starts the daemon's uvicorn
+  db.py                      SQLite engine (WAL, FK, busy_timeout) and 0600 permissions
+  migrate.py                 Programmatic Alembic upgrade
+  models.py                  SQLAlchemy models
+  passwords.py               Password generator (CSPRNG)
+  runtime.py                 In-memory state: DEK, sessions, login throttle, executions
+  schemas.py                 Pydantic input/output models
+  tokenstore.py              Per-project token files (0600, refuses symlinks)
   api/
-    auth.py                  Health, sessão, login/unlock, logout, lock, troca de passphrase
-    credentials.py           CRUD de credenciais e reveal auditado
-    deps.py                  Dependências: banco, sessão + CSRF + Origin, token de agente
-    exec.py                  Execução pela sessão e pelo agente (SSE), contexto e chaves do agente
-    projects.py              CRUD de projetos e ambientes
-    secrets.py               CRUD de segredos, import/export, reveal
-    serializers.py           Conversão modelo → resposta
-    system.py                Visão geral, auditoria e verificação, configurações, gerador de senha
-    tokens.py                Criar, listar e revogar tokens
+    auth.py                  Health, session, login/unlock, logout, lock, passphrase change
+    credentials.py           Credential CRUD and audited reveal
+    deps.py                  Dependencies: database, session + CSRF + Origin, agent token
+    exec.py                  Execution by session and by agent (SSE), agent context and keys
+    projects.py              Project and environment CRUD
+    secrets.py               Secret CRUD, import/export, reveal
+    serializers.py           Model to response conversion
+    system.py                Overview, audit log and verification, settings, password generator
+    tokens.py                Create, list and revoke tokens
   services/
-    audit.py                 Auditoria append-only com HMAC derivado da DEK e cabeça fixada em meta
-    backup.py                Cópia consistente do banco cifrado (envvault backup)
-    credentials.py           Credenciais cifradas (globais ou por projeto)
-    envfile.py               Parser/gerador de .env
-    projects.py              Projetos e ambientes
-    redact.py                Redação da saída (valor, URL-encoded, base64)
-    runner.py                Inicia o filho, injeta env, redige a saída, mata o grupo
-    secrets.py               Segredos cifrados, reveal, import/export, valores para exec
-    tokens.py                Tokens e autorização por escopo/comando
-    vault.py                 init/unlock/lock, troca de passphrase, bloqueio por inatividade
+    audit.py                 Append-only audit log with DEK-derived HMAC and head pinned in meta
+    backup.py                Consistent copy of the encrypted database (envvault backup)
+    credentials.py           Encrypted credentials (global or per project)
+    envfile.py               .env parser/generator
+    projects.py              Projects and environments
+    redact.py                Output redaction (value, URL-encoded, base64)
+    runner.py                Starts the child, injects env, redacts output, kills the group
+    secrets.py               Encrypted secrets, reveal, import/export, values for exec
+    tokens.py                Tokens and scope/command authorization
+    vault.py                 init/unlock/lock, passphrase change, idle lock
   migrations/                Alembic (env.py, versions/0001..0005)
-  web/                       Painel: index.html, app.js, app.css
-tests/                       pytest (conftest com KDF rápido); um arquivo por área
+  web/                       Dashboard: index.html, app.js, app.css
+tests/                       pytest (conftest with fast KDF); one file per area
 ```

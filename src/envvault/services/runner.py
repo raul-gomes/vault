@@ -50,7 +50,7 @@ def resolve_cwd(
             raise ExecError(
                 f"cwd must be inside the registered project path ({base}); "
                 "update the project path in the dashboard or with "
-                "`envvault project update <slug> --path <pasta>`"
+                "`envvault project update <slug> --path <directory>`"
             )
     elif invocation_dir:
         cwd = _within(base, invocation_dir) or base

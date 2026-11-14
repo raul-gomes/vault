@@ -1,47 +1,47 @@
-# Lineage do banco (SQLite)
+# Database lineage (SQLite)
 
-Atualizado em 2026-11-13 (revisão `0005`). Referência rápida; a fonte da verdade
-é `src/envvault/models.py` + `src/envvault/migrations/versions/`.
+Updated on 2026-11-13 (revision `0005`). Quick reference; the source of truth
+is `src/envvault/models.py` + `src/envvault/migrations/versions/`.
 
-Banco: `~/.envvault/vault.db` (ou `$ENVVAULT_HOME/vault.db`), `0600`, WAL,
-`foreign_keys=ON`. O daemon aplica as migrations ao subir (`migrate.upgrade`).
+Database: `~/.envvault/vault.db` (or `$ENVVAULT_HOME/vault.db`), `0600`, WAL,
+`foreign_keys=ON`. The daemon applies the migrations on startup (`migrate.upgrade`).
 
-## Tabelas
+## Tables
 
-| Tabela | Para quê | Colunas (texto puro) | Colunas cifradas |
+| Table | Purpose | Columns (plain text) | Encrypted columns |
 | --- | --- | --- | --- |
-| `meta` | Chave/valor do cofre | `key` (PK), `value` | — (guarda o KDF e a DEK **embrulhada**) |
-| `projects` | Projetos registrados | `id` (uuid), `slug` (único), `name`, `path`, `created_at`, `updated_at` | — |
-| `environments` | Ambientes de um projeto (existem mesmo sem segredo) | `id`, `project_id` → `projects` (CASCADE), `name`; único (`project_id`, `name`) | — |
-| `secrets` | Variáveis de ambiente | `id`, `project_id` → `projects` (CASCADE), `environment`, `key`, `version`, datas; único (`project_id`, `environment`, `key`) | `nonce` + `ciphertext` (AES-256-GCM; AAD `projeto:ambiente:chave:versão`) |
-| `credentials` | Logins de serviços (hosting, DNS, e-mail…) | `id`, `project_id` → `projects` (CASCADE, **nulo = global**), `name`, `category`, `version`, datas | `nonce` + `ciphertext` (JSON com os demais campos; AAD `id:versão`) |
-| `api_tokens` | Tokens de agente | `id`, `name`, `token_hash` (SHA-256, único), `prefix`, `project_id` → `projects` (CASCADE), `environments` (JSON), `can_list`, `can_inject`, `allowed_commands` (JSON), `any_command` (bool, escolha explícita; sem lista e sem ele o token é recusado), `created_at`, `last_used_at`, `revoked_at` | — (o valor do token nunca é guardado) |
-| `audit_log` | Auditoria append-only | `id` (autoinc), `ts`, `actor_type`, `actor_name`, `action`, `project_slug`, `environment`, `key_names` (JSON), `command`, `result`, `detail` (JSON), `prev_hash`, `hash`, `mac` (`hmac` com chave derivada da DEK; `sha256` só para desbloqueio negado antes de existir chave; `legacy` = antes da `0005`) | — (nunca contém valores) |
+| `meta` | Vault key/value | `key` (PK), `value` | — (holds the KDF and the **wrapped** DEK) |
+| `projects` | Registered projects | `id` (uuid), `slug` (unique), `name`, `path`, `created_at`, `updated_at` | — |
+| `environments` | Environments of a project (exist even without secrets) | `id`, `project_id` → `projects` (CASCADE), `name`; unique (`project_id`, `name`) | — |
+| `secrets` | Environment variables | `id`, `project_id` → `projects` (CASCADE), `environment`, `key`, `version`, dates; unique (`project_id`, `environment`, `key`) | `nonce` + `ciphertext` (AES-256-GCM; AAD `project:environment:key:version`) |
+| `credentials` | Service logins (hosting, DNS, email...) | `id`, `project_id` → `projects` (CASCADE, **null = global**), `name`, `category`, `version`, dates | `nonce` + `ciphertext` (JSON with the remaining fields; AAD `id:version`) |
+| `api_tokens` | Agent tokens | `id`, `name`, `token_hash` (SHA-256, unique), `prefix`, `project_id` → `projects` (CASCADE), `environments` (JSON), `can_list`, `can_inject`, `allowed_commands` (JSON), `any_command` (bool, explicit choice; with no list and without it the token is refused), `created_at`, `last_used_at`, `revoked_at` | — (the token value is never stored) |
+| `audit_log` | Append-only audit log | `id` (autoinc), `ts`, `actor_type`, `actor_name`, `action`, `project_slug`, `environment`, `key_names` (JSON), `command`, `result`, `detail` (JSON), `prev_hash`, `hash`, `mac` (`hmac` with a DEK-derived key; `sha256` only for a denied unlock before a key exists; `legacy` = before `0005`) | — (never contains values) |
 
-## Chaves de `meta`
+## `meta` keys
 
-| Chave | Conteúdo |
+| Key | Content |
 | --- | --- |
-| `kdf` | Parâmetros do Argon2id (salt, tempo, memória, paralelismo) |
-| `dek_wrapped` / `dek_nonce` | DEK cifrada pela KEK derivada da passphrase |
-| `lock_timeout_minutes` | Bloqueio por inatividade configurado no painel |
-| `max_unlock_hours` | Bloqueio absoluto em horas (padrão 12; ausente = `ENVVAULT_MAX_UNLOCK_HOURS`) |
-| `created_at` | Data de criação do cofre |
-| `audit_head` | Última entrada com HMAC (`id`, `hash`) + tag HMAC: detecta apagar o fim da auditoria |
+| `kdf` | Argon2id parameters (salt, time, memory, parallelism) |
+| `dek_wrapped` / `dek_nonce` | DEK encrypted by the KEK derived from the passphrase |
+| `lock_timeout_minutes` | Idle lock configured in the dashboard |
+| `max_unlock_hours` | Absolute lock in hours (default 12; absent = `ENVVAULT_MAX_UNLOCK_HOURS`) |
+| `created_at` | Vault creation date |
+| `audit_head` | Latest HMAC entry (`id`, `hash`) + HMAC tag: detects deletion of the audit log tail |
 
-## Regras
+## Rules
 
-- `version` sobe a cada escrita de segredo/credencial e entra no AAD (ciphertext antigo não pode voltar).
-- Apagar um projeto apaga ambientes, segredos, tokens e credenciais dele; credenciais globais ficam.
-- Ambiente só pode ser apagado vazio.
-- `audit_log` nunca recebe UPDATE/DELETE. Reescrever ou truncar a cadeia exige a DEK (HMAC + `audit_head`).
+- `version` increases on every secret/credential write and goes into the AAD (an old ciphertext cannot come back).
+- Deleting a project deletes its environments, secrets, tokens and credentials; global credentials stay.
+- An environment can only be deleted when empty.
+- `audit_log` never gets UPDATE/DELETE. Rewriting or truncating the chain requires the DEK (HMAC + `audit_head`).
 
-## Migrations e origem do schema
+## Migrations and schema origin
 
-| Revisão | Arquivo | O que fez |
+| Revision | File | What it did |
 | --- | --- | --- |
-| `0001` | `0001_initial.py` | `meta`, `projects`, `secrets`, `api_tokens`, `audit_log` e índices |
-| `0002` | `0002_environments.py` | `environments` (ambientes viram linhas; preenche a partir de `secrets`) |
-| `0003` | `0003_credentials.py` | `credentials` e índices por projeto, nome e categoria |
-| `0004` | `0004_token_any_command.py` | `api_tokens.any_command` (padrão falso: token antigo sem lista para de funcionar) |
-| `0005` | `0005_audit_mac.py` | `audit_log.mac` (entradas antigas viram `legacy`) |
+| `0001` | `0001_initial.py` | `meta`, `projects`, `secrets`, `api_tokens`, `audit_log` and indexes |
+| `0002` | `0002_environments.py` | `environments` (environments become rows; backfilled from `secrets`) |
+| `0003` | `0003_credentials.py` | `credentials` and indexes by project, name and category |
+| `0004` | `0004_token_any_command.py` | `api_tokens.any_command` (default false: an old token without a list stops working) |
+| `0005` | `0005_audit_mac.py` | `audit_log.mac` (old entries become `legacy`) |
