@@ -22,7 +22,7 @@ When done: tick `[x]`, write `DONE` and the commit.
 ## Quality
 - [ ] **Q1** Coverage 73% → 90% with a floor in CI (`cli.py` 20%, `daemon.py` 0%).
 - [ ] **Q2** Typecheck (`mypy --strict` or `pyright`) in CI; remove `# type: ignore` de `src/envvault/app.py:70`.
-- [ ] **Q3** Split `src/envvault/cli.py` and `src/envvault/web/app.js`.
+- [x] **Q3** Split `cli.py` into the `cli/` package (this PR) and `web/app.js` into ES modules in `web/js/` (PR #14).
 - [ ] **Q4** Make `_terminate_process_group` public and import it at the top of `runner.py`.
 - [x] **Q5** Everything in English (ADR 0005); AGENTS.md fixed in the translation PR.
 - [ ] **Q6** Replace `httpx` with `httpx2` in the tests (Starlette warning).
