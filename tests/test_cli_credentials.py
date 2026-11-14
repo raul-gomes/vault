@@ -139,7 +139,9 @@ def test_show_copy_fails_when_credential_has_no_password(demo: Cli) -> None:
 
 def test_update_changes_only_given_fields(demo: Cli) -> None:
     _add(demo, "Hostinger", "-u", "me@example.com")
-    result = demo.ok("credential", "update", "Hostinger", "-c", "dns", "--url", "https://x.io", input=PASS)
+    result = demo.ok(
+        "credential", "update", "Hostinger", "-c", "dns", "--url", "https://x.io", input=PASS
+    )
     assert "Credential updated" in result.output
     shown = demo.ok("credential", "show", "Hostinger", input=PASS).output
     assert PASSWORD in shown
@@ -149,7 +151,16 @@ def test_update_changes_only_given_fields(demo: Cli) -> None:
 
 def test_update_replaces_password_and_renames(demo: Cli) -> None:
     _add(demo)
-    demo.ok("credential", "update", "Hostinger", "--name", "Renamed", "--password", "new-pw-123456", input=PASS)
+    demo.ok(
+        "credential",
+        "update",
+        "Hostinger",
+        "--name",
+        "Renamed",
+        "--password",
+        "new-pw-123456",
+        input=PASS,
+    )
     shown = demo.ok("credential", "show", "Renamed", input=PASS).output
     assert "new-pw-123456" in shown
 

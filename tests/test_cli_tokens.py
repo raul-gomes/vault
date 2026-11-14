@@ -95,9 +95,7 @@ def test_token_list_shows_permissions_and_local_copy(demo: Cli) -> None:
 
 
 def test_token_list_shows_read_only_token_without_run_permission(demo: Cli) -> None:
-    demo.ok(
-        "token", "create", "-n", "reader", "-p", "demo", "--no-inject", "--no-save", input=PASS
-    )
+    demo.ok("token", "create", "-n", "reader", "-p", "demo", "--no-inject", "--no-save", input=PASS)
     result = demo.ok("token", "list", input=PASS)
     assert "reader" in result.output
     assert "list" in result.output

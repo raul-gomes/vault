@@ -72,7 +72,9 @@ def test_set_reports_created_then_updated(demo: Cli) -> None:
 
 
 def test_set_generate_prints_password_and_stores_it(demo: Cli) -> None:
-    result = demo.ok("set", "GEN", "-p", "demo", "-e", "dev", "--generate", "--length", "24", input=PASS)
+    result = demo.ok(
+        "set", "GEN", "-p", "demo", "-e", "dev", "--generate", "--length", "24", input=PASS
+    )
     assert "Password generated" in result.output
     assert "Secret created" in result.output
 

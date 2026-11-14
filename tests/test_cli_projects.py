@@ -11,7 +11,9 @@ PASS = f"{PASSPHRASE}\n"
 
 def test_project_add_and_list_show_the_project(cli: Cli, tmp_path: Path) -> None:
     cli.init()
-    added = cli.ok("project", "add", "demo", "-n", "Demo App", "-p", str(tmp_path / "work"), input=PASS)
+    added = cli.ok(
+        "project", "add", "demo", "-n", "Demo App", "-p", str(tmp_path / "work"), input=PASS
+    )
     assert "Project created" in added.output
     listed = cli.ok("project", "list", input=PASS)
     assert "demo" in listed.output

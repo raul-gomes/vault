@@ -121,9 +121,7 @@ def test_stop_signals_daemon_and_removes_pid_file(
     assert not cli.settings.pid_path.exists()
 
 
-def test_stop_fails_when_daemon_keeps_answering(
-    cli: Cli, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_stop_fails_when_daemon_keeps_answering(cli: Cli, monkeypatch: pytest.MonkeyPatch) -> None:
     cli.settings.pid_path.write_text("4242", encoding="utf-8")
     monkeypatch.setattr(os, "kill", lambda pid, sig: None)
     monkeypatch.setattr(vault, "_health", lambda settings, timeout=1.0: {"ok": True})

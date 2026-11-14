@@ -25,4 +25,4 @@ jobs:
         run: uv run ruff format --check .
       # Coverage floor starts at the current 73% and rises to 90% (docs/pendencias.md Q1).
       - name: Tests
-        run: uv run pytest --cov=envvault --cov-report=term-missing --cov-fail-under=73
+        run: uv run pytest --cov=envvault --cov-report=term-missing --cov-fail-under=90
