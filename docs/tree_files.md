@@ -53,6 +53,21 @@ src/envvault/
     tokens.py                Tokens and scope/command authorization
     vault.py                 init/unlock/lock, passphrase change, idle lock
   migrations/                Alembic (env.py, versions/0001..0005)
-  web/                       Dashboard: index.html, app.js, app.css
+  web/                       Dashboard: index.html, app.css
+    js/                      Native ES modules, no build; entry is main.js
+      main.js                Entry: form/nav/modal listeners, bootstrap, router
+      state.js               Shared mutable UI state
+      api.js                 fetch wrapper (CSRF header, 401/423 handling), ApiError
+      dom.js                 el(), toast, dates, tables, modal and prompt helpers
+      shell.js               showLogin / showShell
+      overview.js            Overview view
+      projects.js            Projects list, project page, project dialogs
+      project_credentials.js Project credentials card
+      console.js             Project exec console (SSE)
+      secrets.js             Secret dialogs, import/export
+      credentials.js         Credentials view and dialogs
+      tokens.js              Tokens view and dialogs
+      audit.js               Audit view
+      settings.js            Settings view
 tests/                       pytest (conftest with fast KDF); one file per area
 ```
