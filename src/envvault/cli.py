@@ -36,12 +36,12 @@ from envvault.services.backup import BackupError, create_backup
 app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
-    help="Cofre local de .env: injeta segredos sem expor os valores ao agente.",
+    help="Local .env vault: injects secrets without exposing values to the agent.",
 )
-project_app = typer.Typer(help="Gerencia projetos registrados.", no_args_is_help=True)
-token_app = typer.Typer(help="Gerencia tokens de agente.", no_args_is_help=True)
+project_app = typer.Typer(help="Manage registered projects.", no_args_is_help=True)
+token_app = typer.Typer(help="Manage agent tokens.", no_args_is_help=True)
 credential_app = typer.Typer(
-    help="Gerencia credenciais de serviços (hosting, DNS, e-mail…).",
+    help="Manage service credentials (hosting, DNS, email…).",
     no_args_is_help=True,
 )
 app.add_typer(project_app, name="project")
@@ -107,11 +107,11 @@ def _raise_for_status(response: httpx.Response) -> None:
         return
     detail = _detail(response)
     if response.status_code == 401:
-        raise CliError(f"não autenticado: {detail}")
+        raise CliError(f"not authenticated: {detail}")
     if response.status_code == 423:
-        raise CliError("vault bloqueado; rode `envvault unlock` ou informe a passphrase")
+        raise CliError("vault locked; run `envvault unlock` or provide the passphrase")
     if response.status_code == 409:
-        raise CliError(f"{detail}; rode `envvault init`")
+        raise CliError(f"{detail}; run `envvault init`")
     raise CliError(f"HTTP {response.status_code}: {detail}")
 
 
@@ -145,7 +145,7 @@ def ensure_daemon(settings: Settings) -> None:
         time.sleep(0.2)
         if _health(settings) is not None:
             return
-    _fail(f"o daemon não subiu; veja {settings.log_path}")
+    _fail(f"the daemon did not start; see {settings.log_path}")
 
 
 def _login(settings: Settings, passphrase: str | None = None) -> UserSession:
@@ -169,7 +169,7 @@ def _find_project(session: UserSession, slug: str) -> dict[str, Any]:
     for item in response.json()["items"]:
         if item["slug"] == slug:
             return item
-    raise CliError(f"projeto não encontrado: {slug} (use `envvault project add`)")
+    raise CliError(f"project not found: {slug} (use `envvault project add`)")
 
 
 def _find_credential(session: UserSession, identifier: str) -> dict[str, Any]:
@@ -180,11 +180,11 @@ def _find_credential(session: UserSession, identifier: str) -> dict[str, Any]:
             return item
     matches = [item for item in items if item["name"] == identifier]
     if not matches:
-        raise CliError(f"credencial não encontrada: {identifier}")
+        raise CliError(f"credential not found: {identifier}")
     if len(matches) > 1:
         raise CliError(
-            f"há mais de uma credencial chamada {identifier}; use o id "
-            "(veja com `envvault credential list`)"
+            f"there is more than one credential named {identifier}; use the id "
+            "(see `envvault credential list`)"
         )
     return matches[0]
 
@@ -210,9 +210,9 @@ def _target(project: str | None, environment: str | None) -> tuple[str, str]:
     resolved_project = project or config.get("project")
     resolved_environment = environment or config.get("environment")
     if not resolved_project:
-        raise CliError("informe --project (ou crie um .envvault.toml com `envvault link`)")
+        raise CliError("provide --project (or create a .envvault.toml with `envvault link`)")
     if not resolved_environment:
-        raise CliError("informe --environment (ou defina environment no .envvault.toml)")
+        raise CliError("provide --environment (or set environment in .envvault.toml)")
     return resolved_project, resolved_environment
 
 
@@ -222,7 +222,7 @@ def _env_overrides(values: list[str]) -> dict[str, str]:
     for item in values:
         key, separator, value = item.partition("=")
         if not separator or not key:
-            raise CliError(f"use KEY=VALOR em --env (recebido: {item!r})")
+            raise CliError(f"use KEY=VALUE in --env (got: {item!r})")
         overrides[key] = value
     return overrides
 
@@ -241,7 +241,7 @@ def _print_issues(issues: list[dict[str, Any]]) -> None:
     """Print .env parse issues."""
     for issue in issues:
         color = "yellow" if issue.get("level") == "warning" else "red"
-        console.print(f"[{color}]linha {issue.get('line')}: {issue.get('message')}[/{color}]")
+        console.print(f"[{color}]line {issue.get('line')}: {issue.get('message')}[/{color}]")
 
 
 def _copy_to_clipboard(value: str) -> bool:
@@ -285,7 +285,7 @@ def _stream_exec(client: httpx.Client, path: str, payload: dict[str, Any], csrf:
     except KeyboardInterrupt:
         return 130
     except httpx.HTTPError as exc:
-        _fail(f"não consegui falar com o daemon: {exc}")
+        _fail(f"could not reach the daemon: {exc}")
 
 
 # --------------------------------------------------------------------------- #
@@ -293,7 +293,7 @@ def _stream_exec(client: httpx.Client, path: str, payload: dict[str, Any], csrf:
 # --------------------------------------------------------------------------- #
 @app.command()
 def init() -> None:
-    """Cria o cofre, pede a passphrase mestra e sobe o daemon."""
+    """Create the vault, ask for the master passphrase and start the daemon."""
     settings = Settings.from_env()
     settings.ensure_home()
     if settings.db_path.exists():
@@ -303,10 +303,10 @@ def init() -> None:
             already = vault.is_initialized(db)
         engine.dispose()
         if already:
-            _fail(f"já existe um cofre em {settings.db_path}")
-    passphrase = typer.prompt("Nova passphrase mestra", hide_input=True, confirmation_prompt=True)
+            _fail(f"a vault already exists at {settings.db_path}")
+    passphrase = typer.prompt("New master passphrase", hide_input=True, confirmation_prompt=True)
     if len(passphrase) < 10:
-        _fail("a passphrase deve ter pelo menos 10 caracteres")
+        _fail("the passphrase must be at least 10 characters")
     from envvault import migrate
 
     migrate.upgrade(settings)
@@ -320,15 +320,15 @@ def init() -> None:
     ensure_daemon(settings)
     session = _login(settings, passphrase)
     session.close()
-    console.print(f"[bold green]Cofre criado[/bold green] em {settings.home}")
-    console.print("[yellow]Não há recuperação de passphrase.[/yellow] Guarde-a com cuidado.")
+    console.print(f"[bold green]Vault created[/bold green] at {settings.home}")
+    console.print("[yellow]There is no passphrase recovery.[/yellow] Keep it safe.")
     console.print(f"Dashboard: [bold]{settings.base_url}[/bold]")
-    console.print("Próximo passo: [bold]envvault project add <slug> --path .[/bold]")
+    console.print("Next step: [bold]envvault project add <slug> --path .[/bold]")
 
 
 @app.command()
 def serve() -> None:
-    """Roda o daemon em primeiro plano (use o log para depurar)."""
+    """Run the daemon in the foreground (use the log to debug)."""
     from envvault.daemon import main as daemon_main
 
     daemon_main()
@@ -336,64 +336,64 @@ def serve() -> None:
 
 @app.command()
 def stop() -> None:
-    """Para o daemon em segundo plano."""
+    """Stop the background daemon."""
     settings = Settings.from_env()
     if not settings.pid_path.exists():
-        _fail("daemon não está rodando (sem arquivo de PID)")
+        _fail("daemon is not running (no PID file)")
     try:
         pid = int(settings.pid_path.read_text(encoding="utf-8").strip())
     except ValueError:
-        _fail(f"PID inválido em {settings.pid_path}")
+        _fail(f"invalid PID in {settings.pid_path}")
     try:
         os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
         settings.pid_path.unlink(missing_ok=True)
-        console.print("daemon já estava parado")
+        console.print("daemon was already stopped")
         return
     for _ in range(50):
         time.sleep(0.1)
         if _health(settings, timeout=0.2) is None:
             settings.pid_path.unlink(missing_ok=True)
-            console.print("daemon parado")
+            console.print("daemon stopped")
             return
-    _fail("o daemon não respondeu ao SIGTERM")
+    _fail("the daemon did not respond to SIGTERM")
 
 
 @app.command()
 def status() -> None:
-    """Mostra o estado do daemon e do cofre."""
+    """Show the daemon and vault status."""
     settings = Settings.from_env()
     health = _health(settings)
     console.print(f"EnvVault [bold]{__version__}[/bold]")
     console.print(f"home:   {settings.home}")
-    console.print(f"banco:  {settings.db_path}")
+    console.print(f"database: {settings.db_path}")
     if health is None:
-        console.print("daemon: [red]não está rodando[/red]")
+        console.print("daemon: [red]not running[/red]")
         return
     state = "desbloqueado" if health.get("unlocked") else "bloqueado"
     color = "green" if health.get("unlocked") else "yellow"
-    console.print(f"daemon: [green]ok[/green] em {settings.base_url}")
-    console.print(f"cofre:  [{color}]{state}[/{color}]")
-    console.print(f"timeout de inatividade: {health.get('lock_timeout_minutes')} min")
+    console.print(f"daemon: [green]ok[/green] at {settings.base_url}")
+    console.print(f"vault:  [{color}]{state}[/{color}]")
+    console.print(f"inactivity timeout: {health.get('lock_timeout_minutes')} min")
 
 
 @app.command()
 def unlock() -> None:
-    """Desbloqueia o cofre em memória (a sessão do CLI não é persistida)."""
+    """Unlock the vault in memory (the CLI session is not persisted)."""
     settings = Settings.from_env()
     session = _login(settings)
     session.close()
-    console.print("[green]Cofre desbloqueado.[/green]")
+    console.print("[green]Vault unlocked.[/green]")
 
 
 @app.command()
 def lock() -> None:
-    """Descarta a chave da memória, encerra sessões e mata comandos em execução."""
+    """Discard the key from memory, end sessions and kill running commands."""
     settings = Settings.from_env()
     session = _login(settings)
     try:
         session.request("POST", "/v1/auth/lock")
-        console.print("[yellow]Cofre bloqueado.[/yellow]")
+        console.print("[yellow]Vault locked.[/yellow]")
     finally:
         session.client.close()
 
@@ -403,11 +403,11 @@ def lock() -> None:
 # --------------------------------------------------------------------------- #
 @project_app.command("add")
 def project_add(
-    slug: str = typer.Argument(..., help="Identificador curto, ex.: meu-app"),
-    name: str | None = typer.Option(None, "--name", "-n", help="Nome exibido"),
-    path: str = typer.Option(".", "--path", "-p", help="Diretório do projeto"),
+    slug: str = typer.Argument(..., help="Short identifier, e.g. my-app"),
+    name: str | None = typer.Option(None, "--name", "-n", help="Display name"),
+    path: str = typer.Option(".", "--path", "-p", help="Project directory"),
 ) -> None:
-    """Registra um projeto local."""
+    """Register a local project."""
     settings = Settings.from_env()
     session = _login(settings)
     try:
@@ -417,20 +417,20 @@ def project_add(
             json={"slug": slug, "name": name or slug, "path": path},
         )
         project = response.json()
-        console.print(f"[green]Projeto criado:[/green] {project['slug']} → {project['path']}")
+        console.print(f"[green]Project created:[/green] {project['slug']} → {project['path']}")
     finally:
         session.close()
 
 
 @project_app.command("update")
 def project_update(
-    slug: str = typer.Argument(..., help="Slug do projeto"),
-    name: str | None = typer.Option(None, "--name", "-n", help="Novo nome exibido"),
-    path: str | None = typer.Option(None, "--path", "-p", help="Nova pasta do projeto"),
+    slug: str = typer.Argument(..., help="Project slug"),
+    name: str | None = typer.Option(None, "--name", "-n", help="New display name"),
+    path: str | None = typer.Option(None, "--path", "-p", help="New project directory"),
 ) -> None:
-    """Atualiza o nome e/ou a pasta de um projeto registrado."""
+    """Update the name and/or directory of a registered project."""
     if name is None and path is None:
-        _fail("informe --name e/ou --path")
+        _fail("provide --name and/or --path")
     settings = Settings.from_env()
     session = _login(settings)
     try:
@@ -441,14 +441,14 @@ def project_update(
         if path is not None:
             payload["path"] = path
         updated = session.request("PATCH", f"/v1/projects/{project['id']}", json=payload).json()
-        console.print(f"[green]Projeto atualizado:[/green] {updated['slug']} → {updated['path']}")
+        console.print(f"[green]Project updated:[/green] {updated['slug']} → {updated['path']}")
     finally:
         session.close()
 
 
 @project_app.command("list")
 def project_list() -> None:
-    """Lista os projetos registrados."""
+    """List registered projects."""
     settings = Settings.from_env()
     session = _login(settings)
     try:
@@ -471,15 +471,15 @@ def project_list() -> None:
 @project_app.command("remove")
 def project_remove(
     slug: str = typer.Argument(...),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Não pedir confirmação"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask for confirmation"),
 ) -> None:
-    """Remove um projeto e todos os seus segredos/tokens."""
+    """Remove a project and all its secrets/tokens."""
     settings = Settings.from_env()
     session = _login(settings)
     try:
         project = _find_project(session, slug)
         if not yes and not typer.confirm(
-            f"Apagar {slug} e TODOS os segredos/tokens? Esta ação é irreversível"
+            f"Delete {slug} and ALL secrets/tokens? This cannot be undone"
         ):
             raise typer.Exit(1)
         session.request(
@@ -487,7 +487,7 @@ def project_remove(
             f"/v1/projects/{project['id']}",
             json={"confirm_slug": slug},
         )
-        console.print(f"[yellow]Projeto removido:[/yellow] {slug}")
+        console.print(f"[yellow]Project removed:[/yellow] {slug}")
     finally:
         session.close()
 
@@ -495,21 +495,21 @@ def project_remove(
 @app.command()
 def link(
     project: str | None = typer.Option(
-        None, "--project", "-p", help="Slug do projeto (padrão: nome da pasta atual)"
+        None, "--project", "-p", help="Project slug (default: current directory name)"
     ),
-    environment: str = typer.Option("dev", "--environment", "-e", help="Ambiente padrão"),
-    force: bool = typer.Option(False, "--force", help="Sobrescrever arquivo existente"),
+    environment: str = typer.Option("dev", "--environment", "-e", help="Default environment"),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing file"),
 ) -> None:
-    """Cria .envvault.toml no diretório atual (sem segredos)."""
+    """Create .envvault.toml in the current directory (no secrets)."""
     target = Path.cwd() / PROJECT_FILE
     if target.exists() and not force:
-        _fail(f"{target} já existe (use --force)")
-    slug = project or typer.prompt("Slug do projeto", default=Path.cwd().name)
+        _fail(f"{target} already exists (use --force)")
+    slug = project or typer.prompt("Project slug", default=Path.cwd().name)
     target.write_text(
         f'project = "{slug}"\nenvironment = "{environment}"\n',
         encoding="utf-8",
     )
-    console.print(f"[green]Criado[/green] {target}")
+    console.print(f"[green]Created[/green] {target}")
 
 
 # --------------------------------------------------------------------------- #
@@ -517,16 +517,16 @@ def link(
 # --------------------------------------------------------------------------- #
 @app.command()
 def set(
-    key: str = typer.Argument(..., help="Nome da variável, ex.: DATABASE_URL"),
+    key: str = typer.Argument(..., help="Variable name, e.g. DATABASE_URL"),
     project: str | None = typer.Option(None, "--project", "-p"),
     environment: str | None = typer.Option(None, "--environment", "-e"),
     value: str | None = typer.Option(
-        None, "--value", help="Valor literal (evite: fica no histórico do shell)"
+        None, "--value", help="Literal value (avoid: stays in shell history)"
     ),
-    generate: bool = typer.Option(False, "--generate", help="Gerar uma senha forte"),
-    length: int = typer.Option(DEFAULT_LENGTH, "--length", help="Tamanho ao gerar"),
+    generate: bool = typer.Option(False, "--generate", help="Generate a strong password"),
+    length: int = typer.Option(DEFAULT_LENGTH, "--length", help="Length when generating"),
 ) -> None:
-    """Cria ou substitui um segredo (valor pedido oculto por padrão)."""
+    """Create or replace a secret (value is prompted hidden by default)."""
     slug, env = _target(project, environment)
     settings = Settings.from_env()
     session = _login(settings)
@@ -535,13 +535,13 @@ def set(
             options = PasswordOptions(length=length)
             secret_value = generate_password(options)
             console.print(
-                f"[yellow]Senha gerada ({entropy_bits(options):.0f} bits):[/yellow] "
+                f"[yellow]Password generated ({entropy_bits(options):.0f} bits):[/yellow] "
                 f"[bold]{secret_value}[/bold]"
             )
         elif value is not None:
             secret_value = value
         else:
-            secret_value = typer.prompt(f"Valor de {key}", hide_input=True)
+            secret_value = typer.prompt(f"Value of {key}", hide_input=True)
         item = _find_project(session, slug)
         response = session.request(
             "PUT",
@@ -549,8 +549,8 @@ def set(
             json={"environment": env, "key": key, "value": secret_value},
         )
         payload = response.json()
-        action = "criado" if payload["created"] else "atualizado"
-        console.print(f"[green]Segredo {action}:[/green] {slug}/{env}/{key}")
+        action = "created" if payload["created"] else "updated"
+        console.print(f"[green]Secret {action}:[/green] {slug}/{env}/{key}")
     finally:
         session.close()
 
@@ -560,7 +560,7 @@ def list_secrets(
     project: str | None = typer.Option(None, "--project", "-p"),
     environment: str | None = typer.Option(None, "--environment", "-e"),
 ) -> None:
-    """Lista nomes e versões dos segredos (nunca os valores)."""
+    """List secret names and versions (never the values)."""
     slug, env = _target(project, environment)
     settings = Settings.from_env()
     session = _login(settings)
@@ -572,7 +572,7 @@ def list_secrets(
             params={"environment": env},
         ).json()["items"]
         rows = [[row["key"], str(row["version"]), str(row["updated_at"])] for row in rows_data]
-        _table(f"{slug}/{env}", ["chave", "versão", "atualizado em"], rows)
+        _table(f"{slug}/{env}", ["key", "version", "updated at"], rows)
     finally:
         session.close()
 
@@ -584,9 +584,9 @@ def remove(
     environment: str | None = typer.Option(None, "--environment", "-e"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
-    """Remove um segredo."""
+    """Remove a secret."""
     slug, env = _target(project, environment)
-    if not yes and not typer.confirm(f"Remover {key} de {slug}/{env}?"):
+    if not yes and not typer.confirm(f"Remove {key} from {slug}/{env}?"):
         raise typer.Exit(1)
     settings = Settings.from_env()
     session = _login(settings)
@@ -597,7 +597,7 @@ def remove(
             f"/v1/projects/{item['id']}/secrets/{key}",
             params={"environment": env},
         )
-        console.print(f"[yellow]Segredo removido:[/yellow] {key}")
+        console.print(f"[yellow]Secret removed:[/yellow] {key}")
     finally:
         session.close()
 
@@ -607,9 +607,9 @@ def reveal(
     key: str = typer.Argument(...),
     project: str | None = typer.Option(None, "--project", "-p"),
     environment: str | None = typer.Option(None, "--environment", "-e"),
-    copy: bool = typer.Option(False, "--copy", help="Copiar para a área de transferência"),
+    copy: bool = typer.Option(False, "--copy", help="Copy to the clipboard"),
 ) -> None:
-    """Mostra um valor (auditado) depois de revalidar a passphrase."""
+    """Show a value (audited) after re-validating the passphrase."""
     slug, env = _target(project, environment)
     settings = Settings.from_env()
     session = _login(settings)
@@ -623,8 +623,8 @@ def reveal(
         secret = response.json()["value"]
         if copy:
             if not _copy_to_clipboard(secret):
-                _fail("nenhum utilitário de clipboard encontrado (wl-copy/xclip/pbcopy)")
-            console.print("[green]Valor copiado para a área de transferência.[/green]")
+                _fail("no clipboard utility found (wl-copy/xclip/pbcopy)")
+            console.print("[green]Value copied to the clipboard.[/green]")
         else:
             console.print(secret)
     finally:
@@ -633,21 +633,25 @@ def reveal(
 
 @app.command("import")
 def import_env(
-    file: str = typer.Argument(".env", help="Arquivo .env de origem"),
+    file: str = typer.Argument(".env", help="Source .env file"),
     project: str | None = typer.Option(None, "--project", "-p"),
     environment: str | None = typer.Option(None, "--environment", "-e"),
-    replace: bool = typer.Option(False, "--replace", help="Sobrescrever chaves existentes"),
+    replace: bool = typer.Option(False, "--replace", help="Overwrite existing keys"),
     delete_file: bool = typer.Option(
-        False, "--delete-file", help="Apagar o .env após importar (o cofre vira a fonte)"
+        False,
+        "--delete-file",
+        help="Delete the .env after importing (the vault becomes the source)",
     ),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Não pedir confirmação ao apagar"),
-    create: bool = typer.Option(False, "--create", help="Criar o projeto se não existir"),
-    path: str = typer.Option(".", "--path", help="Diretório do projeto ao usar --create"),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Do not ask for confirmation when deleting"
+    ),
+    create: bool = typer.Option(False, "--create", help="Create the project if it does not exist"),
+    path: str = typer.Option(".", "--path", help="Project directory when using --create"),
 ) -> None:
-    """Importa um .env para o cofre (valida e nunca executa o conteúdo)."""
+    """Import a .env into the vault (validates and never executes the content)."""
     source = Path(file).expanduser()
     if not source.is_file():
-        _fail(f"arquivo não encontrado: {source}")
+        _fail(f"file not found: {source}")
     content = source.read_text(encoding="utf-8")
     slug, env = _target(project, environment)
     settings = Settings.from_env()
@@ -663,7 +667,7 @@ def import_env(
                 "/v1/projects",
                 json={"slug": slug, "name": slug, "path": path},
             ).json()
-            console.print(f"[green]Projeto criado:[/green] {slug}")
+            console.print(f"[green]Project created:[/green] {slug}")
         response = session.request(
             "POST",
             f"/v1/projects/{item['id']}/import",
@@ -671,16 +675,16 @@ def import_env(
         )
         result = response.json()
         console.print(
-            f"[green]Importado[/green] em {slug}/{env}: "
-            f"{result['created']} criados, {result['updated']} atualizados, "
-            f"{result['skipped']} ignorados"
+            f"[green]Imported[/green] into {slug}/{env}: "
+            f"{result['created']} created, {result['updated']} updated, "
+            f"{result['skipped']} skipped"
         )
         _print_issues(result["issues"])
         if delete_file:
-            if not yes and not typer.confirm(f"Apagar {source} agora?"):
+            if not yes and not typer.confirm(f"Delete {source} now?"):
                 return
             source.unlink()
-            console.print(f"[yellow]Arquivo removido:[/yellow] {source}")
+            console.print(f"[yellow]File removed:[/yellow] {source}")
     finally:
         session.close()
 
@@ -689,10 +693,10 @@ def import_env(
 def export(
     project: str | None = typer.Option(None, "--project", "-p"),
     environment: str | None = typer.Option(None, "--environment", "-e"),
-    out: str | None = typer.Option(None, "--out", "-o", help="Arquivo de destino"),
-    force: bool = typer.Option(False, "--force", help="Sobrescrever destino"),
+    out: str | None = typer.Option(None, "--out", "-o", help="Destination file"),
+    force: bool = typer.Option(False, "--force", help="Overwrite destination"),
 ) -> None:
-    """Exporta um ambiente para .env (temporário) ou para stdout."""
+    """Export an environment to .env (temporary) or to stdout."""
     slug, env = _target(project, environment)
     settings = Settings.from_env()
     session = _login(settings)
@@ -708,12 +712,12 @@ def export(
             return
         destination = Path(out).expanduser()
         if destination.exists() and not force:
-            _fail(f"{destination} já existe (use --force)")
+            _fail(f"{destination} already exists (use --force)")
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text(text, encoding="utf-8")
         destination.chmod(0o600)
-        console.print(f"[yellow]Exportado para {destination}[/yellow] (modo 0600)")
-        console.print("Apague o arquivo após usar; prefira `envvault run`.")
+        console.print(f"[yellow]Exported to {destination}[/yellow] (mode 0600)")
+        console.print("Delete the file after use; prefer `envvault run`.")
     finally:
         session.close()
 
@@ -735,7 +739,7 @@ def _token_json(client: httpx.Client, path: str, params: dict[str, Any] | None =
     try:
         response = client.get(path, params=params)
     except httpx.HTTPError as exc:
-        _fail(f"não consegui falar com o daemon: {exc}")
+        _fail(f"could not reach the daemon: {exc}")
     _raise_for_status(response)
     return response.json()
 
@@ -757,24 +761,24 @@ def run(
     project: str | None = typer.Option(None, "--project", "-p"),
     environment: str | None = typer.Option(None, "--environment", "-e"),
     cwd: str | None = typer.Option(
-        None, "--cwd", help="Diretório de execução, relativo à pasta do projeto"
+        None, "--cwd", help="Execution directory, relative to the project directory"
     ),
     env: list[str] = typer.Option(
-        [], "--env", "-E", help="Variável extra KEY=VALOR (repetível, não sobrescreve segredo)"
+        [], "--env", "-E", help="Extra variable KEY=VALUE (repeatable, does not override secrets)"
     ),
     timeout: int | None = typer.Option(
-        None, "--timeout", help="Segundos antes de encerrar o processo"
+        None, "--timeout", help="Seconds before killing the process"
     ),
 ) -> None:
-    """Roda um comando com os segredos injetados pelo daemon.
+    """Run a command with secrets injected by the daemon.
 
-    Exemplo: envvault run --env PORT=3001 --timeout 120 -- npm run dev
+    Example: envvault run --env PORT=3001 --timeout 120 -- npm run dev
     """
     command = list(ctx.args)
     if command and command[0] == "--":
         command = command[1:]
     if not command:
-        _fail("informe o comando após --, ex.: envvault run -- npm run dev")
+        _fail("provide the command after --, e.g.: envvault run -- npm run dev")
     slug, env_name = _target(project, environment)
     overrides = _env_overrides(env)
     settings = Settings.from_env()
@@ -822,9 +826,9 @@ def run(
 
 @app.command()
 def context(
-    project: str | None = typer.Option(None, "--project", "-p", help="Projeto do token local"),
+    project: str | None = typer.Option(None, "--project", "-p", help="Project of the local token"),
 ) -> None:
-    """Mostra o escopo do token de agente (projeto, ambiente, comandos)."""
+    """Show the agent token scope (project, environment, commands)."""
     settings = Settings.from_env()
     env_token = os.environ.get("ENVVAULT_TOKEN")
     if env_token:
@@ -832,11 +836,12 @@ def context(
     else:
         slug = project or (_project_config() or {}).get("project")
         if not slug:
-            _fail("informe --project (ou defina ENVVAULT_TOKEN / .envvault.toml)")
+            _fail("provide --project (or set ENVVAULT_TOKEN / .envvault.toml)")
         auth = _agent_token(settings, slug)
         if auth is None:
             _fail(
-                f"nenhum token local para {slug}; crie com `envvault token create -p {slug} --save`"
+                f"no local token for {slug}; "
+                f"create one with `envvault token create -p {slug} --save`"
             )
         token = auth.value
     client = _token_client(settings, token)
@@ -848,18 +853,18 @@ def context(
 
 @app.command()
 def keys(
-    project: str | None = typer.Option(None, "--project", "-p", help="Projeto do token local"),
+    project: str | None = typer.Option(None, "--project", "-p", help="Project of the local token"),
     environment: str | None = typer.Option(
-        None, "--environment", "-e", help="Ambiente (padrão: do .envvault.toml)"
+        None, "--environment", "-e", help="Environment (default: from .envvault.toml)"
     ),
 ) -> None:
-    """Lista nomes de chaves do token do projeto (nunca os valores)."""
+    """List key names for the project token (never the values)."""
     slug, resolved = _target(project, environment)
     settings = Settings.from_env()
     auth = _agent_token(settings, slug)
     if auth is None:
         _fail(
-            f"nenhum token para {slug}; crie com `envvault token create -p {slug} --save` "
+            f"no token for {slug}; create one with `envvault token create -p {slug} --save` "
             "(como humano, use `envvault list`)"
         )
     client = _token_client(settings, auth.value)
@@ -867,7 +872,7 @@ def keys(
         items = _token_json(client, "/v1/agent/keys", params={"environment": resolved})["items"]
         _table(
             f"chaves/{resolved}",
-            ["chave", "versão", "atualizado em"],
+            ["key", "version", "updated at"],
             [[item["key"], str(item["version"]), item["updated_at"]] for item in items],
         )
     finally:
@@ -879,30 +884,30 @@ def keys(
 # --------------------------------------------------------------------------- #
 @token_app.command("create")
 def token_create(
-    name: str = typer.Option(..., "--name", "-n", help="Nome do token"),
+    name: str = typer.Option(..., "--name", "-n", help="Token name"),
     project: str = typer.Option(..., "--project", "-p"),
     environment: list[str] = typer.Option(
-        ["dev"], "--environment", "-e", help="Ambiente permitido (repetível)"
+        ["dev"], "--environment", "-e", help="Allowed environment (repeatable)"
     ),
     allow: list[str] = typer.Option(
-        [], "--allow", help="Comando permitido, comparado palavra por palavra (repetível)"
+        [], "--allow", help="Allowed command, matched word by word (repeatable)"
     ),
     any_command: bool = typer.Option(
-        False, "--any-command", help="Permitir qualquer comando (não recomendado)"
+        False, "--any-command", help="Allow any command (not recommended)"
     ),
-    no_list: bool = typer.Option(False, "--no-list", help="Não permitir listar chaves"),
-    no_inject: bool = typer.Option(False, "--no-inject", help="Não permitir execução"),
+    no_list: bool = typer.Option(False, "--no-list", help="Do not allow listing keys"),
+    no_inject: bool = typer.Option(False, "--no-inject", help="Do not allow execution"),
     save: bool = typer.Option(
         True,
         "--save/--no-save",
-        help="Grava em ~/.envvault/agent-tokens/<projeto>.token (0600) em vez de imprimir",
+        help="Write to ~/.envvault/agent-tokens/<project>.token (0600) instead of printing",
     ),
 ) -> None:
-    """Cria um token de agente e, por padrão, salva em um arquivo 0600."""
+    """Create an agent token and, by default, save it to a 0600 file."""
     if not no_inject and not allow and not any_command:
-        _fail('informe ao menos um --allow "<comando>" ou, se for mesmo o caso, --any-command')
+        _fail('provide at least one --allow "<command>" or, if you really mean it, --any-command')
     if allow and any_command:
-        _fail("use --allow ou --any-command, não os dois")
+        _fail("use --allow or --any-command, not both")
     settings = Settings.from_env()
     session = _login(settings)
     try:
@@ -933,23 +938,23 @@ def token_create(
                 )
             except tokenstore.TokenStoreError as exc:
                 _fail(str(exc))
-            console.print(f"[bold green]Token criado e salvo:[/bold green] {path} (0600)")
-            console.print(f"Use de qualquer pasta: envvault run -p {item['slug']} -- <comando>")
+            console.print(f"[bold green]Token created and saved:[/bold green] {path} (0600)")
+            console.print(f"Use from any directory: envvault run -p {item['slug']} -- <command>")
             if os.environ.get("ENVVAULT_TOKEN"):
                 console.print(
-                    "[yellow]ENVVAULT_TOKEN está definido neste shell e tem prioridade; "
-                    "rode `unset ENVVAULT_TOKEN` para usar o arquivo do projeto.[/yellow]"
+                    "[yellow]ENVVAULT_TOKEN is set in this shell and takes precedence; "
+                    "run `unset ENVVAULT_TOKEN` to use the project file.[/yellow]"
                 )
         else:
-            console.print("[bold green]Token criado.[/bold green] Ele não será mostrado novamente:")
+            console.print("[bold green]Token created.[/bold green] It will not be shown again:")
             console.print(raw)
-            console.print("\nUse no ambiente do agente:")
+            console.print("\nUse in the agent environment:")
             console.print(f"  export ENVVAULT_TOKEN={raw}")
         if allow:
-            console.print(f"Comandos permitidos: {', '.join(allow)}")
+            console.print(f"Allowed commands: {', '.join(allow)}")
         elif any_command:
             console.print(
-                "[yellow]Qualquer comando é aceito para este token (--any-command).[/yellow]"
+                "[yellow]Any command is accepted for this token (--any-command).[/yellow]"
             )
     finally:
         session.close()
@@ -957,7 +962,7 @@ def token_create(
 
 @token_app.command("list")
 def token_list() -> None:
-    """Lista tokens (sem revelar o valor)."""
+    """List tokens (without revealing the value)."""
     settings = Settings.from_env()
     session = _login(settings)
     try:
@@ -982,7 +987,7 @@ def token_list() -> None:
             )
         _table(
             "Tokens",
-            ["nome", "projeto", "ambientes", "permissões", "último uso", "status", "local"],
+            ["name", "project", "environments", "permissions", "last used", "status", "local"],
             rows,
         )
     finally:
@@ -991,23 +996,23 @@ def token_list() -> None:
 
 @token_app.command("revoke")
 def token_revoke(
-    name: str = typer.Argument(..., help="Nome do token"),
+    name: str = typer.Argument(..., help="Token name"),
     yes: bool = typer.Option(False, "--yes", "-y"),
 ) -> None:
-    """Revoga um token pelo nome."""
+    """Revoke a token by name."""
     settings = Settings.from_env()
     session = _login(settings)
     try:
         items = session.request("GET", "/v1/tokens").json()["items"]
         matches = [item for item in items if item["name"] == name and item["active"]]
         if not matches:
-            _fail(f"token ativo não encontrado: {name}")
+            _fail(f"active token not found: {name}")
         if len(matches) > 1 and not yes:
-            _fail("há mais de um token ativo com esse nome; revogue pela interface")
-        if not yes and not typer.confirm(f"Revogar o token {name}?"):
+            _fail("there is more than one active token with that name; revoke it in the dashboard")
+        if not yes and not typer.confirm(f"Revoke the token {name}?"):
             raise typer.Exit(1)
         session.request("DELETE", f"/v1/tokens/{matches[0]['id']}")
-        console.print(f"[yellow]Token revogado:[/yellow] {name}")
+        console.print(f"[yellow]Token revoked:[/yellow] {name}")
         slug = matches[0]["project"]["slug"]
         remaining = [
             item
@@ -1017,7 +1022,7 @@ def token_revoke(
         local_id = tokenstore.local_token_id(settings.home, slug)
         should_remove = local_id == matches[0]["id"] or (local_id is None and not remaining)
         if should_remove and tokenstore.remove(settings.home, slug):
-            console.print(f"[yellow]Token local removido:[/yellow] {slug}")
+            console.print(f"[yellow]Local token removed:[/yellow] {slug}")
     finally:
         session.close()
 
@@ -1027,33 +1032,33 @@ def token_revoke(
 # --------------------------------------------------------------------------- #
 @credential_app.command("add")
 def credential_add(
-    name: str = typer.Argument(..., help="Nome visível, ex.: Hostinger"),
+    name: str = typer.Argument(..., help="Display name, e.g. Hostinger"),
     category: str = typer.Option(
         "other", "--category", "-c", help="hosting, dns, email, smtp, api, database…"
     ),
-    username: str = typer.Option("", "--username", "-u", help="Usuário ou e-mail"),
-    url: str = typer.Option("", "--url", help="URL do painel/serviço"),
-    notes: str = typer.Option("", "--notes", "-n", help="Observações (ficam criptografadas)"),
+    username: str = typer.Option("", "--username", "-u", help="Username or email"),
+    url: str = typer.Option("", "--url", help="Dashboard/service URL"),
+    notes: str = typer.Option("", "--notes", "-n", help="Notes (stored encrypted)"),
     password: str | None = typer.Option(
-        None, "--password", help="Senha literal (evite: fica no histórico do shell)"
+        None, "--password", help="Literal password (avoid: stays in shell history)"
     ),
-    generate: bool = typer.Option(False, "--generate", help="Gerar uma senha forte"),
-    length: int = typer.Option(DEFAULT_LENGTH, "--length", help="Tamanho ao gerar"),
+    generate: bool = typer.Option(False, "--generate", help="Generate a strong password"),
+    length: int = typer.Option(DEFAULT_LENGTH, "--length", help="Length when generating"),
     project: str | None = typer.Option(
-        None, "--project", "-p", help="Slug do projeto (omita para credencial global)"
+        None, "--project", "-p", help="Project slug (omit for a global credential)"
     ),
 ) -> None:
-    """Adiciona uma credencial de serviço (campos sensíveis criptografados)."""
+    """Add a service credential (sensitive fields encrypted)."""
     if generate:
         secret_value = generate_password(PasswordOptions(length=length))
         console.print(
-            "[yellow]Senha gerada e salva no cofre. Use "
-            "`envvault credential show` para vê-la.[/yellow]"
+            "[yellow]Password generated and saved in the vault. Use "
+            "`envvault credential show` to view it.[/yellow]"
         )
     elif password is not None:
         secret_value = password
     else:
-        secret_value = typer.prompt(f"Senha de {name}", hide_input=True)
+        secret_value = typer.prompt(f"Password for {name}", hide_input=True)
     settings = Settings.from_env()
     session = _login(settings)
     try:
@@ -1072,7 +1077,7 @@ def credential_add(
             },
         ).json()["item"]
         console.print(
-            f"[green]Credencial criada:[/green] {item['name']} "
+            f"[green]Credential created:[/green] {item['name']} "
             f"({item['category']}, {item['project']['slug'] if item['project'] else 'global'}) "
             f"· id {item['id']}"
         )
@@ -1082,14 +1087,14 @@ def credential_add(
 
 @credential_app.command("list")
 def credential_list(
-    query: str | None = typer.Option(None, "--query", "-q", help="Buscar por nome/categoria"),
+    query: str | None = typer.Option(None, "--query", "-q", help="Search by name/category"),
     category: str | None = typer.Option(None, "--category", "-c"),
-    project: str | None = typer.Option(None, "--project", "-p", help="Filtrar por projeto"),
-    only_global: bool = typer.Option(False, "--global", help="Somente credenciais globais"),
+    project: str | None = typer.Option(None, "--project", "-p", help="Filter by project"),
+    only_global: bool = typer.Option(False, "--global", help="Only global credentials"),
 ) -> None:
-    """Lista credenciais (somente metadados, nunca os valores)."""
+    """List credentials (metadata only, never the values)."""
     if project and only_global:
-        _fail("use --project ou --global, não os dois")
+        _fail("use --project or --global, not both")
     settings = Settings.from_env()
     session = _login(settings)
     try:
@@ -1113,17 +1118,17 @@ def credential_list(
             ]
             for item in items
         ]
-        _table("Credenciais", ["nome", "categoria", "escopo", "versão", "id"], rows)
+        _table("Credentials", ["name", "category", "scope", "version", "id"], rows)
     finally:
         session.close()
 
 
 @credential_app.command("show")
 def credential_show(
-    identifier: str = typer.Argument(..., help="Nome ou id da credencial"),
-    copy: bool = typer.Option(False, "--copy", help="Copiar a senha para o clipboard"),
+    identifier: str = typer.Argument(..., help="Credential name or id"),
+    copy: bool = typer.Option(False, "--copy", help="Copy the password to the clipboard"),
 ) -> None:
-    """Mostra os campos de uma credencial (revelação auditada)."""
+    """Show the fields of a credential (audited reveal)."""
     settings = Settings.from_env()
     session = _login(settings)
     try:
@@ -1135,17 +1140,17 @@ def credential_show(
         ).json()
         if copy:
             if not data.get("password"):
-                _fail("esta credencial não tem senha salva")
+                _fail("this credential has no saved password")
             if not _copy_to_clipboard(data["password"]):
-                _fail("nenhum utilitário de clipboard encontrado (wl-copy/xclip/pbcopy)")
-            console.print("[green]Senha copiada para a área de transferência.[/green]")
+                _fail("no clipboard utility found (wl-copy/xclip/pbcopy)")
+            console.print("[green]Password copied to the clipboard.[/green]")
             return
         rows = [
             ["nome", data["name"]],
             ["categoria", data["category"]],
             ["escopo", data["project"]["slug"] if data.get("project") else "global"],
-            ["usuário", data.get("username") or "—"],
-            ["senha", data.get("password") or "—"],
+            ["username", data.get("username") or "—"],
+            ["password", data.get("password") or "—"],
             ["url", data.get("url") or "—"],
             ["notas", data.get("notes") or "—"],
         ]
@@ -1156,27 +1161,27 @@ def credential_show(
 
 @credential_app.command("update")
 def credential_update(
-    identifier: str = typer.Argument(..., help="Nome ou id da credencial"),
+    identifier: str = typer.Argument(..., help="Credential name or id"),
     name: str | None = typer.Option(None, "--name"),
     category: str | None = typer.Option(None, "--category", "-c"),
     username: str | None = typer.Option(None, "--username", "-u"),
     url: str | None = typer.Option(None, "--url"),
     notes: str | None = typer.Option(None, "--notes", "-n"),
     password: str | None = typer.Option(
-        None, "--password", help="Nova senha literal (evite o histórico do shell)"
+        None, "--password", help="New literal password (avoid shell history)"
     ),
-    generate: bool = typer.Option(False, "--generate", help="Gerar uma nova senha forte"),
-    length: int = typer.Option(DEFAULT_LENGTH, "--length", help="Tamanho ao gerar"),
+    generate: bool = typer.Option(False, "--generate", help="Generate a new strong password"),
+    length: int = typer.Option(DEFAULT_LENGTH, "--length", help="Length when generating"),
     project: str | None = typer.Option(
-        None, "--project", "-p", help="Mover a credencial para este projeto"
+        None, "--project", "-p", help="Move the credential to this project"
     ),
     global_scope: bool = typer.Option(
-        False, "--global", help="Mover a credencial para o escopo global"
+        False, "--global", help="Move the credential to the global scope"
     ),
 ) -> None:
-    """Atualiza campos de uma credencial preservando os não informados."""
+    """Update credential fields, keeping the ones not provided."""
     if project and global_scope:
-        _fail("use --project ou --global, não os dois")
+        _fail("use --project or --global, not both")
     settings = Settings.from_env()
     session = _login(settings)
     try:
@@ -1189,7 +1194,7 @@ def credential_update(
         new_password = current.get("password", "")
         if generate:
             new_password = generate_password(PasswordOptions(length=length))
-            console.print("[yellow]Nova senha gerada e salva.[/yellow]")
+            console.print("[yellow]New password generated and saved.[/yellow]")
         elif password is not None:
             new_password = password
         if project:
@@ -1212,8 +1217,7 @@ def credential_update(
         ]
         scope = updated["project"]["slug"] if updated["project"] else "global"
         console.print(
-            f"[green]Credencial atualizada:[/green] {updated['name']} "
-            f"({scope}, v{updated['version']})"
+            f"[green]Credential updated:[/green] {updated['name']} ({scope}, v{updated['version']})"
         )
     finally:
         session.close()
@@ -1221,20 +1225,20 @@ def credential_update(
 
 @credential_app.command("remove")
 def credential_remove(
-    identifier: str = typer.Argument(..., help="Nome ou id da credencial"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Não pedir confirmação"),
+    identifier: str = typer.Argument(..., help="Credential name or id"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask for confirmation"),
 ) -> None:
-    """Remove uma credencial."""
+    """Remove a credential."""
     settings = Settings.from_env()
     session = _login(settings)
     try:
         item = _find_credential(session, identifier)
         if not yes and not typer.confirm(
-            f"Remover a credencial {item['name']}? Esta ação é irreversível"
+            f"Remove the credential {item['name']}? This cannot be undone"
         ):
             raise typer.Exit(1)
         session.request("DELETE", f"/v1/credentials/{item['id']}")
-        console.print(f"[yellow]Credencial removida:[/yellow] {item['name']}")
+        console.print(f"[yellow]Credential removed:[/yellow] {item['name']}")
     finally:
         session.close()
 
@@ -1247,7 +1251,7 @@ def audit(
     limit: int = typer.Option(30, "--limit", "-l", min=1, max=500),
     project: str | None = typer.Option(None, "--project", "-p"),
 ) -> None:
-    """Mostra os últimos eventos de auditoria."""
+    """Show the latest audit log events."""
     settings = Settings.from_env()
     session = _login(settings)
     try:
@@ -1266,59 +1270,59 @@ def audit(
             ]
             for item in items
         ]
-        _table("Auditoria", ["quando", "ator", "ação", "projeto", "ambiente", "resultado"], rows)
+        _table("Audit log", ["when", "actor", "action", "project", "environment", "result"], rows)
     finally:
         session.close()
 
 
 @app.command()
 def backup(
-    destination: Path = typer.Argument(..., help="Arquivo novo ou pasta existente"),
+    destination: Path = typer.Argument(..., help="New file or existing directory"),
 ) -> None:
-    """Copia o banco ainda cifrado (não precisa do daemon nem da passphrase)."""
+    """Copy the still-encrypted database (needs neither the daemon nor the passphrase)."""
     settings = Settings.from_env()
     try:
         path = create_backup(settings.db_path, destination)
     except BackupError as exc:
         _fail(str(exc))
-    console.print(f"[bold green]Backup criado:[/bold green] {path} (0600, cifrado)")
+    console.print(f"[bold green]Backup created:[/bold green] {path} (0600, encrypted)")
     console.print(
-        "Para restaurar você precisa da passphrase que estava em uso na hora do backup. "
-        "Passo a passo: README, seção Backup e restauração."
+        "To restore you need the passphrase that was in use when the backup was made. "
+        "Step by step: README, Backup and restore section."
     )
 
 
 @app.command()
 def verify() -> None:
-    """Verifica a integridade da cadeia de auditoria."""
+    """Verify the integrity of the audit log chain."""
     settings = Settings.from_env()
     session = _login(settings)
     try:
         result = session.request("GET", "/v1/audit/verify").json()
         if result["valid"]:
-            console.print("[green]Cadeia de auditoria íntegra.[/green]")
+            console.print("[green]Audit log chain intact.[/green]")
         else:
-            _fail(f"cadeia quebrada no id {result['first_bad_id']}")
+            _fail(f"chain broken at id {result['first_bad_id']}")
     finally:
         session.close()
 
 
 @app.command()
 def passwd() -> None:
-    """Troca a passphrase mestra (re-embrulha a chave de dados)."""
+    """Change the master passphrase (re-wraps the data key)."""
     settings = Settings.from_env()
     session = _login(settings)
     try:
         current = session.passphrase
-        new = typer.prompt("Nova passphrase", hide_input=True, confirmation_prompt=True)
+        new = typer.prompt("New passphrase", hide_input=True, confirmation_prompt=True)
         if len(new) < 10:
-            _fail("a nova passphrase deve ter pelo menos 10 caracteres")
+            _fail("the new passphrase must be at least 10 characters")
         session.request(
             "POST",
             "/v1/auth/passphrase",
             json={"current": current, "new": new},
         )
-        console.print("[green]Passphrase alterada.[/green]")
+        console.print("[green]Passphrase changed.[/green]")
     finally:
         session.close()
 
@@ -1331,10 +1335,10 @@ def generate(
     digits: bool = typer.Option(True, "--digits/--no-digits"),
     symbols: bool = typer.Option(True, "--symbols/--no-symbols"),
     count: int = typer.Option(1, "--count", "-c", min=1, max=100),
-    as_json: bool = typer.Option(False, "--json", help="Saída JSON"),
-    copy: bool = typer.Option(False, "--copy", help="Copiar a primeira para o clipboard"),
+    as_json: bool = typer.Option(False, "--json", help="JSON output"),
+    copy: bool = typer.Option(False, "--copy", help="Copy the first one to the clipboard"),
 ) -> None:
-    """Gera senhas fortes localmente (CSPRNG do sistema)."""
+    """Generate strong passwords locally (system CSPRNG)."""
     options = PasswordOptions(
         length=length, upper=upper, lower=lower, digits=digits, symbols=symbols
     )
@@ -1357,12 +1361,12 @@ def generate(
         )
         return
     if copy and not _copy_to_clipboard(passwords[0]):
-        _fail("nenhum utilitário de clipboard encontrado (wl-copy/xclip/pbcopy)")
+        _fail("no clipboard utility found (wl-copy/xclip/pbcopy)")
     for password in passwords:
         console.print(password)
     console.print(
-        f"[dim]{length} caracteres · ~{bits} bits de entropia · "
-        f"{len(options.alphabet())} símbolos possíveis[/dim]",
+        f"[dim]{length} characters · ~{bits} bits of entropy · "
+        f"{len(options.alphabet())} possible symbols[/dim]",
         err=True,
     )
 
