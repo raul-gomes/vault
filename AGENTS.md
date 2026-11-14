@@ -62,7 +62,7 @@ the web UI, README, docs and commits (imperative mood).
 | `src/envvault/services/audit.py` | append-only hash chain |
 | `src/envvault/api/` | FastAPI routers and auth dependencies |
 | `src/envvault/web/` | dependency-free dashboard |
-| `src/envvault/cli.py` | Typer CLI |
+| `src/envvault/cli/` | Typer CLI, one module per command group (`_common.py` holds shared helpers) |
 | `src/envvault/migrations/` | Alembic schema |
 
 Data flow for execution:

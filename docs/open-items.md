@@ -7,7 +7,7 @@ When done: tick `[x]`, write `DONE` and the commit.
 - [x] **S6** `~/.envvault/daemon.log` is `0664` (group/other readable). Plan item 2. Fixed in PR #4.
 
 ## Bugs (regression test first)
-- [x] **B1** Relative `cwd` resolved against the daemon directory (`src/envvault/services/runner.py:39`). Resolve relative to the project directory; the CLI must send the current `cwd` when it is inside the project (`src/envvault/cli.py:788`). Fixed in PR #5.
+- [x] **B1** Relative `cwd` resolved against the daemon directory (`src/envvault/services/runner.py:39`). Resolve relative to the project directory; the CLI must send the current `cwd` when it is inside the project (`src/envvault/cli/runtime.py`). Fixed in PR #5.
 - [x] **B2** Command filter by text prefix (`src/envvault/services/tokens.py:150`). Compare argv element by element. Fixed in PR #6.
 - [x] **B3** Orphan process when the execution limit is exceeded: `Popen` before `add_exec` (`src/envvault/services/runner.py:129`/`152`). Reserve the slot before starting and map the error to 429. Fixed in PR #3.
 - [ ] **B4** Confirm cleanup when the client disconnects before the first SSE event (`src/envvault/services/runner.py:156`).

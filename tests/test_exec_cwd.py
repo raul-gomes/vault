@@ -10,7 +10,8 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from envvault import cli
+from envvault.cli import app as cli_app
+from envvault.cli import runtime as cli_runtime
 from envvault.services.runner import ExecError, resolve_cwd
 from tests.conftest import ApiClient, sse_events
 
@@ -89,11 +90,15 @@ def test_cli_run_sends_the_invocation_dir(monkeypatch: pytest.MonkeyPatch, tmp_p
         return 0
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli, "_target", lambda _p, _e: ("sample", "dev"))
-    monkeypatch.setattr(cli, "_agent_token", lambda _s, _slug: SimpleNamespace(value="ev_x"))
-    monkeypatch.setattr(cli, "_token_client", lambda _s, _t: SimpleNamespace(close=lambda: None))
-    monkeypatch.setattr(cli, "_stream_exec", fake_stream)
-    result = CliRunner().invoke(cli.app, ["run", "-p", "sample", "--", "echo", "hi"])
+    monkeypatch.setattr(cli_runtime, "_target", lambda _p, _e: ("sample", "dev"))
+    monkeypatch.setattr(
+        cli_runtime, "_agent_token", lambda _s, _slug: SimpleNamespace(value="ev_x")
+    )
+    monkeypatch.setattr(
+        cli_runtime, "_token_client", lambda _s, _t: SimpleNamespace(close=lambda: None)
+    )
+    monkeypatch.setattr(cli_runtime, "_stream_exec", fake_stream)
+    result = CliRunner().invoke(cli_app, ["run", "-p", "sample", "--", "echo", "hi"])
     assert result.exit_code == 0, result.output
     assert sent["invocation_dir"] == os.getcwd()
     assert sent["cwd"] is None

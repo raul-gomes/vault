@@ -578,7 +578,7 @@ src/envvault/
   services/     vault, secrets, credentials, projects, tokens, audit, runner, redact, envfile
   migrations/   Alembic
   web/          static dashboard (HTML/CSS/JS, no build)
-  cli.py        command-line interface
+  cli/          command-line interface (package, one module per command group)
   crypto.py     Argon2id + AES-256-GCM
   runtime.py    in-memory state (DEK, sessions, executions)
 tests/          tests (pytest)
