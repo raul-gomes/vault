@@ -52,7 +52,7 @@ command execution (B1 and B3), the command filter that matches a text prefix
 `services/runner.py:39` does `Path(requested).expanduser().resolve()`. This uses
 the directory the daemon was started in. `/v1/agent/context` itself suggests
 `"cwd": "frontend"`, which does not point to `<project>/frontend`. The CLI sends
-`--cwd` as typed (`cli.py:788`). Without `--cwd`, the command always runs in the
+`--cwd` as typed (`cli/runtime.py`). Without `--cwd`, the command always runs in the
 project root, even when called from a subdirectory (`envvault run` inside
 `admin/` runs in the root).
 

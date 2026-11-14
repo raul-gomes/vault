@@ -20,7 +20,18 @@ docs/
 src/envvault/
   __init__.py                Package version
   app.py                     FastAPI factory, Host guard, error handlers, static files
-  cli.py                     Typer CLI `envvault` (all commands)
+  cli/                       Typer CLI `envvault`, one module per command group
+    __init__.py              Imports the command modules (order = help order); `main`
+    __main__.py              `python -m envvault.cli`
+    _common.py               Apps, console, CliError, daemon/session/HTTP helpers
+    vault.py                 init, serve, stop, status, unlock, lock
+    secrets.py               link, set, list, remove, reveal, import, export
+    runtime.py               run, context, keys (agent-token helpers)
+    maintenance.py           audit, backup, verify, passwd
+    pwgen.py                 generate
+    projects.py              `project` sub-commands
+    tokens.py                `token` sub-commands
+    credentials.py           `credential` sub-commands
   config.py                  Settings from ENVVAULT_* (paths, port, KDF)
   crypto.py                  Argon2id, DEK wrapping, AES-256-GCM with AAD
   daemon.py                  Starts the daemon's uvicorn
