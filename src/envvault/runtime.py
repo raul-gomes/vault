@@ -85,6 +85,8 @@ class ExecRecord:
     started_at: float = field(default_factory=time.monotonic)
     env_keys: tuple[str, ...] = ()
     timeout_seconds: int | None = None
+    finalized: bool = False
+    finalize_lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
 
 class Runtime:

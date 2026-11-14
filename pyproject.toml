@@ -8,6 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "Raul Gomes" }]
 dependencies = [
     "alembic>=1.13,<2",
+    "anyio>=4,<5",
     "argon2-cffi>=23.1,<26",
     "cryptography>=43,<50",
     "fastapi>=0.115,<1",
