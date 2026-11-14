@@ -117,11 +117,10 @@ def token_list() -> None:
                     item["name"],
                     slug,
                     ", ".join(item["environments"]),
-                    ("listar " if item["can_list"] else "")
-                    + ("executar" if item["can_inject"] else ""),
-                    item["last_used_at"] or "nunca",
-                    "ativo" if item["active"] else "revogado",
-                    "sim" if local else "—",
+                    ("list " if item["can_list"] else "") + ("run" if item["can_inject"] else ""),
+                    item["last_used_at"] or "never",
+                    "active" if item["active"] else "revoked",
+                    "yes" if local else "—",
                 ]
             )
         _table(
