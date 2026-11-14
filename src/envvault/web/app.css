@@ -597,7 +597,7 @@ pre.output {
 }
 
 pre.output:empty::before {
-  content: "A saída do comando aparece aqui…";
+  content: "Command output appears here…";
   color: var(--muted);
 }
 

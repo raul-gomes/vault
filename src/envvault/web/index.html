@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -14,11 +14,11 @@
           <span class="brand-mark">EV</span>
           <div>
             <h1>EnvVault</h1>
-            <p class="muted">cofre local de segredos</p>
+            <p class="muted">local secrets vault</p>
           </div>
         </div>
         <form id="login-form" class="stack">
-          <label for="passphrase">Passphrase mestra</label>
+          <label for="passphrase">Master passphrase</label>
           <input
             id="passphrase"
             name="passphrase"
@@ -28,12 +28,12 @@
             required
             autofocus
           />
-          <button type="submit" class="btn primary" id="login-btn">Desbloquear</button>
+          <button type="submit" class="btn primary" id="login-btn">Unlock</button>
           <p id="login-error" class="error" role="alert"></p>
         </form>
         <p class="hint">
-          O daemon escuta apenas em <span class="mono">127.0.0.1</span>. A chave de
-          dados fica só na memória e o cofre bloqueia por inatividade.
+          The daemon listens only on <span class="mono">127.0.0.1</span>. The data key
+          stays in memory only, and the vault locks after inactivity.
         </p>
       </div>
     </div>
@@ -47,24 +47,24 @@
             <p class="muted" id="sidebar-version"></p>
           </div>
         </div>
-        <nav class="nav" aria-label="Navegação principal">
-          <button class="nav-item" data-view="overview">Visão geral</button>
-          <button class="nav-item" data-view="projects">Projetos</button>
-          <button class="nav-item" data-view="credentials">Credenciais</button>
+        <nav class="nav" aria-label="Main navigation">
+          <button class="nav-item" data-view="overview">Overview</button>
+          <button class="nav-item" data-view="projects">Projects</button>
+          <button class="nav-item" data-view="credentials">Credentials</button>
           <button class="nav-item" data-view="tokens">Tokens</button>
-          <button class="nav-item" data-view="audit">Auditoria</button>
-          <button class="nav-item" data-view="settings">Configurações</button>
+          <button class="nav-item" data-view="audit">Audit log</button>
+          <button class="nav-item" data-view="settings">Settings</button>
         </nav>
         <div class="sidebar-footer">
-          <span class="badge ok" id="lock-state">desbloqueado</span>
-          <button class="btn ghost small" id="lock-btn">Bloquear agora</button>
+          <span class="badge ok" id="lock-state">unlocked</span>
+          <button class="btn ghost small" id="lock-btn">Lock now</button>
         </div>
       </aside>
 
       <main class="main">
         <header class="topbar">
           <div>
-            <h2 id="view-title">Visão geral</h2>
+            <h2 id="view-title">Overview</h2>
             <p class="muted" id="view-subtitle"></p>
           </div>
           <div class="topbar-actions" id="topbar-actions"></div>
@@ -78,13 +78,13 @@
     <dialog id="modal" class="modal">
       <div class="modal-card">
         <header class="modal-header">
-          <h3 id="modal-title">Título</h3>
-          <button type="button" class="icon-btn" id="modal-close" aria-label="Fechar">×</button>
+          <h3 id="modal-title">Title</h3>
+          <button type="button" class="icon-btn" id="modal-close" aria-label="Close">×</button>
         </header>
         <div id="modal-body" class="modal-body"></div>
         <footer class="modal-footer">
-          <button type="button" class="btn ghost" id="modal-cancel">Cancelar</button>
-          <button type="button" class="btn primary" id="modal-submit">Salvar</button>
+          <button type="button" class="btn ghost" id="modal-cancel">Cancel</button>
+          <button type="button" class="btn primary" id="modal-submit">Save</button>
         </footer>
       </div>
     </dialog>
