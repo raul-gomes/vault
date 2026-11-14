@@ -117,16 +117,16 @@ def test_update_increments_version_and_replaces_payload(auth: ApiClient) -> None
         f"/v1/credentials/{item['id']}",
         json={
             **CREDENTIAL,
-            "name": "Hostinger secundária",
+            "name": "Hostinger secondary",
             "category": "dns",
             "username": "novo-usuario-9900",
-            "password": "nova-senha-9900",
+            "password": "new-password-9900",
             "notes": "rotacionada",
         },
     )
     assert updated.status_code == 200
     assert updated.json()["item"]["version"] == 2
-    assert updated.json()["item"]["name"] == "Hostinger secundária"
+    assert updated.json()["item"]["name"] == "Hostinger secondary"
 
     revealed = auth.post(
         f"/v1/credentials/{item['id']}/reveal",
@@ -135,7 +135,7 @@ def test_update_increments_version_and_replaces_payload(auth: ApiClient) -> None
     assert revealed.status_code == 200
     payload = revealed.json()
     assert payload["username"] == "novo-usuario-9900"
-    assert payload["password"] == "nova-senha-9900"
+    assert payload["password"] == "new-password-9900"
     assert payload["notes"] == "rotacionada"
 
 
@@ -208,14 +208,14 @@ def test_overview_counts_credentials(auth: ApiClient) -> None:
 
 
 def test_deleting_project_removes_only_its_credentials(auth: ApiClient, project: dict) -> None:
-    scoped = _create(auth, name="Credencial do cliente", project_id=project["id"])
-    _create(auth, name="Credencial global")
+    scoped = _create(auth, name="Client credential", project_id=project["id"])
+    _create(auth, name="Global credential")
 
     deleted = auth.delete(f"/v1/projects/{project['id']}", json={"confirm_slug": project["slug"]})
     assert deleted.status_code == 204
 
     remaining = auth.get("/v1/credentials").json()["items"]
-    assert [item["name"] for item in remaining] == ["Credencial global"]
+    assert [item["name"] for item in remaining] == ["Global credential"]
     assert scoped["id"] not in {item["id"] for item in remaining}
 
 

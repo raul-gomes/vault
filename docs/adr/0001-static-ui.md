@@ -1,65 +1,63 @@
-# ADR 0001 — Dashboard estático sem framework
+# ADR 0001 — Static dashboard without a framework
 
-- **Status:** aceito
-- **Data:** 2026-11-09
-- **Contexto:** decisão de front-end do EnvVault v0.1
+- **Status:** accepted
+- **Date:** 2026-11-09
+- **Context:** front-end decision for EnvVault v0.1
 
-## Contexto
+## Context
 
-O EnvVault é um cofre local de segredos. A interface web é uma superfície
-sensível: ela pode revelar valores e disparar comandos com injeção. Cada
-dependência de front-end (framework, roteador, biblioteca de UI, toolchain de
-build) adiciona código executado no mesmo contexto de origem que a sessão
-autenticada.
+EnvVault is a local secret vault. The web interface is a sensitive surface: it
+can reveal values and trigger commands with injection. Every front-end
+dependency (framework, router, UI library, build toolchain) adds code running
+in the same origin as the authenticated session.
 
-O dashboard precisa de: login, listas, formulários, modais, abas de ambiente,
-console com streaming SSE, e um gerador de senha. Não precisa de SEO, render
-no servidor, rotas profundas estáveis nem compartilhamento de componentes entre
-times.
+The dashboard needs: login, lists, forms, modals, environment tabs, a console
+with SSE streaming, and a password generator. It does not need SEO,
+server-side rendering, stable deep routes or component sharing between teams.
 
-## Decisão
+## Decision
 
-Servir uma SPA mínima em HTML/CSS/JS puro, embutida no pacote Python:
+Serve a minimal SPA in plain HTML/CSS/JS, embedded in the Python package:
 
-- `web/index.html` — shell, login e `<dialog>` de modal
-- `web/app.css` — tema escuro com variáveis CSS
-- `web/app.js` — módulo ES único, sem build
+- `web/index.html` — shell, login and modal `<dialog>`
+- `web/app.css` — dark theme with CSS variables
+- `web/js/*.js` — native ES modules (entry `main.js`), no build
 
-Regras:
+Rules:
 
-1. Nada de `innerHTML` com dados do usuário; o helper `el()` cria nós e anexa
-   texto via `document.createTextNode`.
-2. Nenhuma dependência externa ou CDN. Todos os assets são servidos por
-   `/static` a partir do próprio pacote.
-3. Estado em um objeto `state` simples; navegação por `location.hash`.
-4. O console de execução lê `ReadableStream` e parseia frames SSE manualmente.
+1. No `innerHTML` with user data; the `el()` helper creates nodes and attaches
+   text via `document.createTextNode`.
+2. No external dependency or CDN. All assets are served from `/static` by the
+   package itself.
+3. State in a simple `state` object; navigation via `location.hash`.
+4. The execution console reads a `ReadableStream` and parses SSE frames manually.
 
-## Consequências
+## Consequences
 
-**Positivas**
+**Positive**
 
-- Superfície de ataque e de supply chain mínima: não há `node_modules` no
-  runtime, nem script de terceiros na origem autenticada.
-- Deploy trivial: o wheel já contém a UI; nada para compilar.
-- CSP e auditoria de código viáveis: o app inteiro é legível em três arquivos.
-- Sem incompatibilidade de versão de framework ao atualizar Python/FastAPI.
+- Minimal attack and supply-chain surface: there is no `node_modules` at
+  runtime, and no third-party script in the authenticated origin.
+- Trivial deploy: the wheel already contains the UI; nothing to compile.
+- CSP and code audit are feasible: the whole app is readable in three files.
+- No framework version mismatch when upgrading Python/FastAPI.
 
-**Negativas**
+**Negative**
 
-- Sem componentização reativa; telas são funções que reconstroem o DOM.
-- Sem type-checking de front-end; o contrato da API depende de disciplina e dos
-  testes de backend.
-- Sem testes unitários de UI no repositório (o smoke test com Playwright vive
-  fora, porque exige binário de browser).
-- Se a UI crescer muito, a manutenção fica mais cara que a de um framework.
+- No reactive componentization; screens are functions that rebuild the DOM.
+- No front-end type-checking; the API contract depends on discipline and on
+  backend tests.
+- No UI unit tests in the repository (the Playwright smoke test lives outside,
+  because it needs a browser binary).
+- If the UI grows a lot, maintenance gets more expensive than with a framework.
 
-## Alternativas consideradas
+## Alternatives considered
 
-- **React + Vite:** produtividade e ecossistema, mas adiciona build, centenas de
-  dependências transitivas e um bundle servido na origem da sessão.
-- **HTMX/Alpine via CDN:** pouco código, mas depende de terceiros em runtime.
-- **Server-side templates (Jinja):** simples, porém o console SSE e os modais
-  ficam mais verbosos e a interatividade exige mais idas ao servidor.
+- **React + Vite:** productivity and ecosystem, but adds a build, hundreds of
+  transitive dependencies and a bundle served in the session origin.
+- **HTMX/Alpine via CDN:** little code, but depends on third parties at runtime.
+- **Server-side templates (Jinja):** simple, but the SSE console and the modals
+  get more verbose and interactivity needs more round trips to the server.
 
-A decisão é revisitável se a UI passar de ~2.000 linhas de JS ou precisar de
-estado compartilhado complexo.
+The decision can be revisited if the UI passes ~2,000 lines of JS or needs
+complex shared state.

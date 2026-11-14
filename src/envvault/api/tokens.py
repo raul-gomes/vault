@@ -41,6 +41,7 @@ def create_token(
         can_list=payload.can_list,
         can_inject=payload.can_inject,
         allowed_commands=payload.allowed_commands,
+        any_command=payload.any_command,
     )
     return {"token": raw, "item": token_payload(token)}
 

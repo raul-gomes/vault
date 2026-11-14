@@ -1,6 +1,6 @@
 [project]
 name = "envvault"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local encrypted vault that injects project .env secrets into subprocesses without exposing them."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -8,6 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "Raul Gomes" }]
 dependencies = [
     "alembic>=1.13,<2",
+    "anyio>=4,<5",
     "argon2-cffi>=23.1,<26",
     "cryptography>=43,<50",
     "fastapi>=0.115,<1",

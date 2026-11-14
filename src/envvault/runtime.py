@@ -9,10 +9,13 @@ import secrets
 import signal
 import threading
 import time
+import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from envvault.config import Settings
+from envvault.crypto import derive_audit_key
 
 if TYPE_CHECKING:
     import subprocess
@@ -32,6 +35,10 @@ class VaultNotInitialized(Exception):
 
 class RateLimited(Exception):
     """Raised when too many passphrase attempts happened in a short window."""
+
+
+class ExecLimitReached(Exception):
+    """Raised when every concurrent execution slot is taken or reserved."""
 
 
 def hash_token(raw: str) -> str:
@@ -78,6 +85,8 @@ class ExecRecord:
     started_at: float = field(default_factory=time.monotonic)
     env_keys: tuple[str, ...] = ()
     timeout_seconds: int | None = None
+    finalized: bool = False
+    finalize_lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
 
 class Runtime:
@@ -87,9 +96,16 @@ class Runtime:
         self.settings = settings
         self.dek: bytes | None = None
         self.last_activity: float | None = None
+        self.unlocked_at: float | None = None
+        # Integrity key for the audit chain. Kept after locking so entries
+        # written by the lock itself and by commands it kills stay keyed.
+        self.audit_key: bytes | None = None
+        # Monotonic clock; tests replace it to stay deterministic.
+        self.clock: Callable[[], float] = time.monotonic
         self.sessions: dict[str, Session] = {}
         self.login_failures: dict[str, list[float]] = {}
         self.execs: dict[str, ExecRecord] = {}
+        self._reserved_slots: set[str] = set()
         self.lock = threading.RLock()
 
     # -- lifecycle ---------------------------------------------------------
@@ -97,7 +113,9 @@ class Runtime:
         """Install the data key in memory and start the idle clock."""
         with self.lock:
             self.dek = dek
-            self.last_activity = time.monotonic()
+            self.audit_key = derive_audit_key(dek)
+            self.unlocked_at = self.clock()
+            self.last_activity = self.unlocked_at
 
     def locked(self) -> bool:
         """Return whether the vault is locked in memory."""
@@ -106,20 +124,21 @@ class Runtime:
     def touch(self) -> None:
         """Record authenticated activity."""
         with self.lock:
-            self.last_activity = time.monotonic()
+            self.last_activity = self.clock()
 
     def clear_key(self) -> None:
         """Drop the data key and every server-side session."""
         with self.lock:
             self.dek = None
             self.last_activity = None
+            self.unlocked_at = None
             self.sessions.clear()
 
     # -- sessions ----------------------------------------------------------
     def create_session(self) -> tuple[str, Session]:
         """Create a session and return ``(raw_token, session)``."""
         raw = new_session_token()
-        now = time.monotonic()
+        now = self.clock()
         session = Session(
             token_hash=hash_token(raw),
             csrf=secrets.token_urlsafe(24),
@@ -138,7 +157,7 @@ class Runtime:
             session = self.sessions.get(hash_token(raw))
             if session is None:
                 return None
-            now = time.monotonic()
+            now = self.clock()
             if now - session.last_seen > self.settings.session_idle_minutes * 60:
                 del self.sessions[session.token_hash]
                 return None
@@ -148,7 +167,7 @@ class Runtime:
     # -- login throttle ----------------------------------------------------
     def check_login_allowed(self, client: str, limit: int = 5, window: float = 60.0) -> None:
         """Raise :class:`RateLimited` after ``limit`` failures inside ``window``."""
-        now = time.monotonic()
+        now = self.clock()
         with self.lock:
             recent = [ts for ts in self.login_failures.get(client, []) if now - ts < window]
             self.login_failures[client] = recent
@@ -158,7 +177,7 @@ class Runtime:
     def record_login_failure(self, client: str) -> None:
         """Record one failed passphrase attempt."""
         with self.lock:
-            self.login_failures.setdefault(client, []).append(time.monotonic())
+            self.login_failures.setdefault(client, []).append(self.clock())
 
     def clear_login_failures(self, client: str) -> None:
         """Reset the throttle after a successful authentication."""
@@ -166,11 +185,40 @@ class Runtime:
             self.login_failures.pop(client, None)
 
     # -- executions --------------------------------------------------------
-    def add_exec(self, record: ExecRecord) -> None:
-        """Register a running child process, enforcing the concurrency cap."""
+    def reserve_exec_slot(self) -> str:
+        """Reserve an execution slot before any process is started.
+
+        Returns the execution id the slot is reserved for. Raises
+        :class:`ExecLimitReached` when running plus reserved executions already
+        fill the concurrency cap, so a rejected request never spawns a child.
+        """
         with self.lock:
-            if len(self.execs) >= self.settings.max_concurrent_execs:
-                raise RuntimeError("too many concurrent executions")
+            taken = len(self.execs) + len(self._reserved_slots)
+            if taken >= self.settings.max_concurrent_execs:
+                raise ExecLimitReached("too many concurrent executions; try again later")
+            exec_id = uuid.uuid4().hex[:16]
+            self._reserved_slots.add(exec_id)
+            return exec_id
+
+    def release_exec_slot(self, exec_id: str) -> None:
+        """Give back a reserved slot whose process was never registered."""
+        with self.lock:
+            self._reserved_slots.discard(exec_id)
+
+    @property
+    def reserved_exec_slots(self) -> int:
+        """Number of slots reserved but not yet holding a running process."""
+        with self.lock:
+            return len(self._reserved_slots)
+
+    def add_exec(self, record: ExecRecord) -> None:
+        """Register a running child process, consuming the slot reserved for it.
+
+        Never raises: the process already exists, so refusing it here would
+        leave an untracked child holding secrets.
+        """
+        with self.lock:
+            self._reserved_slots.discard(record.exec_id)
             self.execs[record.exec_id] = record
 
     def remove_exec(self, exec_id: str) -> ExecRecord | None:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, field_validator
 
+from envvault.config import MAX_UNLOCK_HOURS_LIMIT
+
 
 class LoginRequest(BaseModel):
     """Passphrase used to unlock the vault and create a session."""
@@ -102,6 +104,7 @@ class TokenCreateRequest(BaseModel):
     can_list: bool = True
     can_inject: bool = True
     allowed_commands: list[str] = Field(default_factory=list)
+    any_command: bool = False
 
 
 class ExecRequest(BaseModel):
@@ -111,6 +114,7 @@ class ExecRequest(BaseModel):
     environment: str = Field(min_length=1, max_length=40)
     command: list[str] = Field(min_length=1, max_length=64)
     cwd: str | None = Field(default=None, max_length=500)
+    invocation_dir: str | None = Field(default=None, max_length=500)
     env: dict[str, str] = Field(default_factory=dict, max_length=64)
     timeout_seconds: int | None = Field(default=None, ge=1, le=3600)
 
@@ -126,6 +130,7 @@ class AgentExecRequest(BaseModel):
     environment: str = Field(min_length=1, max_length=40)
     command: list[str] = Field(min_length=1, max_length=64)
     cwd: str | None = Field(default=None, max_length=500)
+    invocation_dir: str | None = Field(default=None, max_length=500)
     env: dict[str, str] = Field(default_factory=dict, max_length=64)
     timeout_seconds: int | None = Field(default=None, ge=1, le=3600)
 
@@ -151,3 +156,4 @@ class SettingsRequest(BaseModel):
     """Mutable settings."""
 
     lock_timeout_minutes: int = Field(ge=1, le=1440)
+    max_unlock_hours: int | None = Field(default=None, ge=1, le=MAX_UNLOCK_HOURS_LIMIT)

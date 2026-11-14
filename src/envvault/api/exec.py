@@ -16,7 +16,7 @@ from envvault.api.deps import (
     require_agent,
     require_session,
 )
-from envvault.models import ApiToken
+from envvault.models import ApiToken, Project
 from envvault.runtime import Runtime
 from envvault.schemas import AgentExecRequest, ExecRequest
 from envvault.services import audit, runner, tokens
@@ -41,42 +41,20 @@ def exec_as_user(
 ) -> StreamingResponse:
     """Run a command with secrets injected, authenticated by the web session."""
     project = project_or_404(db, payload.project_id)
-    cwd = runner.resolve_cwd(project, payload.cwd)
-    command = runner.validate_command(payload.command)
-    values = secret_service.values_for_exec(db, state, project, payload.environment)
-    extra_env = runner.validate_env(payload.env, vault_keys=set(values))
-    audit.append(
+    return _start_exec(
+        request,
         db,
-        actor_type="user",
-        actor_name="user",
-        action="exec.start",
-        project_slug=project.slug,
-        environment=payload.environment,
-        command=" ".join(command),
-        detail={
-            "cwd": str(cwd),
-            "env_keys": sorted(extra_env),
-            "timeout_seconds": payload.timeout_seconds,
-        },
-        lock=state.lock,
-    )
-    db.commit()
-    record, redactor = runner.spawn(
         state,
         project=project,
         environment=payload.environment,
-        secrets=values,
-        command=command,
-        cwd=cwd,
+        command=payload.command,
+        cwd=payload.cwd,
+        invocation_dir=payload.invocation_dir,
+        env=payload.env,
+        timeout_seconds=payload.timeout_seconds,
         actor_type="user",
         actor_name="user",
-        extra_env=extra_env,
-        timeout_seconds=payload.timeout_seconds,
-    )
-    return StreamingResponse(
-        runner.stream(request.app.state.session_factory, state, record, redactor),
-        media_type="text/event-stream",
-        headers=SSE_HEADERS,
+        audit_detail={},
     )
 
 
@@ -92,12 +70,15 @@ def agent_context(
         "can_list": token.can_list,
         "can_inject": token.can_inject,
         "allowed_commands": tokens.command_list(token),
+        "any_command": token.any_command,
         "usage": (
             "Call POST /v1/agent/exec with {'environment': ..., 'command': [...], "
             "'env': {...}, 'timeout_seconds': ...}. The daemon injects the vault "
             "secrets, assembles the extra env vars and redacts the output; there is "
             "no endpoint that returns plaintext. Env keys already stored in the "
-            "vault cannot be overridden."
+            "vault cannot be overridden. 'cwd' is relative to the project root; "
+            "without it, 'invocation_dir' (the caller's directory) is used when it "
+            "is inside the project, else the project root."
         ),
         "request_example": {
             "environment": "dev",
@@ -157,42 +138,84 @@ def exec_as_agent(
         environment=payload.environment,
         command=payload.command,
     )
-    cwd = runner.resolve_cwd(project, payload.cwd)
-    command = runner.validate_command(payload.command)
-    values = secret_service.values_for_exec(db, state, project, payload.environment)
-    extra_env = runner.validate_env(payload.env, vault_keys=set(values))
     tokens.touch_usage(db, token)
-    audit.append(
+    return _start_exec(
+        request,
         db,
-        actor_type="agent",
-        actor_name=token.name,
-        action="exec.start",
-        project_slug=project.slug,
-        environment=payload.environment,
-        command=" ".join(command),
-        detail={
-            "cwd": str(cwd),
-            "token_prefix": token.prefix,
-            "env_keys": sorted(extra_env),
-            "timeout_seconds": payload.timeout_seconds,
-        },
-        lock=state.lock,
-    )
-    db.commit()
-    record, redactor = runner.spawn(
         state,
         project=project,
         environment=payload.environment,
-        secrets=values,
-        command=command,
-        cwd=cwd,
+        command=payload.command,
+        cwd=payload.cwd,
+        invocation_dir=payload.invocation_dir,
+        env=payload.env,
+        timeout_seconds=payload.timeout_seconds,
         actor_type="agent",
         actor_name=token.name,
-        extra_env=extra_env,
-        timeout_seconds=payload.timeout_seconds,
+        audit_detail={"token_prefix": token.prefix},
     )
-    return StreamingResponse(
-        runner.stream(request.app.state.session_factory, state, record, redactor),
-        media_type="text/event-stream",
-        headers=SSE_HEADERS,
+
+
+def _start_exec(
+    request: Request,
+    db: Session,
+    state: Runtime,
+    *,
+    project: Project,
+    environment: str,
+    command: list[str],
+    cwd: str | None,
+    invocation_dir: str | None,
+    env: dict[str, str] | None,
+    timeout_seconds: int | None,
+    actor_type: str,
+    actor_name: str,
+    audit_detail: dict[str, object],
+) -> StreamingResponse:
+    """Validate, reserve a slot, audit and spawn; release the slot on any failure.
+
+    The slot is reserved before anything is audited or started, so a request
+    over the concurrency limit gets 429 and never creates a child process.
+    """
+    resolved_cwd = runner.resolve_cwd(project, cwd, invocation_dir=invocation_dir)
+    argv = runner.validate_command(command)
+    values = secret_service.values_for_exec(db, state, project, environment)
+    extra_env = runner.validate_env(env, vault_keys=set(values))
+    exec_id = state.reserve_exec_slot()
+    try:
+        audit.append(
+            db,
+            actor_type=actor_type,
+            actor_name=actor_name,
+            action="exec.start",
+            project_slug=project.slug,
+            environment=environment,
+            command=" ".join(argv),
+            detail={
+                **audit_detail,
+                "cwd": str(resolved_cwd),
+                "env_keys": sorted(extra_env),
+                "timeout_seconds": timeout_seconds,
+            },
+            state=state,
+        )
+        db.commit()
+        record, redactor = runner.spawn(
+            state,
+            exec_id=exec_id,
+            project=project,
+            environment=environment,
+            secrets=values,
+            command=argv,
+            cwd=resolved_cwd,
+            actor_type=actor_type,
+            actor_name=actor_name,
+            extra_env=extra_env,
+            timeout_seconds=timeout_seconds,
+        )
+    except BaseException:
+        state.release_exec_slot(exec_id)
+        raise
+    return runner.exec_response(
+        request.app.state.session_factory, state, record, redactor, headers=SSE_HEADERS
     )

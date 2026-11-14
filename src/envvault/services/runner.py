@@ -8,12 +8,16 @@ import queue
 import subprocess
 import threading
 import time
-import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from functools import partial
 from pathlib import Path
 from typing import Any
 
+import anyio
+import anyio.to_thread
 from sqlalchemy.orm import Session, sessionmaker
+from starlette.responses import StreamingResponse
+from starlette.types import Receive, Scope, Send
 
 from envvault.models import Project
 from envvault.runtime import ExecRecord, Runtime
@@ -33,19 +37,39 @@ class ExecError(ValueError):
     """Raised for invalid commands or working directories."""
 
 
-def resolve_cwd(project: Project, requested: str | None) -> Path:
-    """Resolve a working directory and require it to stay inside the project."""
+def resolve_cwd(
+    project: Project, requested: str | None, *, invocation_dir: str | None = None
+) -> Path:
+    """Resolve the working directory, which must stay inside the project.
+
+    * ``requested`` (``--cwd``): relative paths are taken from the project path,
+      never from the daemon's own directory; outside the project is an error.
+    * ``invocation_dir`` (where the caller ran the CLI): used when no ``cwd``
+      was requested and it lies inside the project; otherwise the project root
+      is used, so a call from outside the project still works.
+    """
     base = Path(project.path).expanduser().resolve()
-    cwd = Path(requested).expanduser().resolve() if requested else base
-    if not cwd.is_relative_to(base):
-        raise ExecError(
-            f"cwd must be inside the registered project path ({base}); "
-            "update the project path in the dashboard or with "
-            "`envvault project update <slug> --path <pasta>`"
-        )
+    if requested:
+        cwd = _within(base, requested)
+        if cwd is None:
+            raise ExecError(
+                f"cwd must be inside the registered project path ({base}); "
+                "update the project path in the dashboard or with "
+                "`envvault project update <slug> --path <directory>`"
+            )
+    elif invocation_dir:
+        cwd = _within(base, invocation_dir) or base
+    else:
+        cwd = base
     if not cwd.is_dir():
         raise ExecError(f"cwd does not exist: {cwd}")
     return cwd
+
+
+def _within(base: Path, candidate: str) -> Path | None:
+    """Resolve ``candidate`` against ``base``; ``None`` when it escapes ``base``."""
+    resolved = (base / Path(candidate).expanduser()).resolve()
+    return resolved if resolved.is_relative_to(base) else None
 
 
 def validate_command(command: list[str]) -> list[str]:
@@ -107,6 +131,7 @@ def validate_env(
 def spawn(
     state: Runtime,
     *,
+    exec_id: str,
     project: Project,
     environment: str,
     secrets: dict[str, str],
@@ -117,7 +142,11 @@ def spawn(
     extra_env: dict[str, str] | None = None,
     timeout_seconds: int | None = None,
 ) -> tuple[ExecRecord, Redactor]:
-    """Start the child with secrets in its environment and no ENVVAULT_* leak."""
+    """Start the child with secrets in its environment and no ENVVAULT_* leak.
+
+    ``exec_id`` must come from :meth:`Runtime.reserve_exec_slot`; the caller
+    releases the slot if this function raises.
+    """
     command = validate_command(command)
     extra_env = validate_env(extra_env, vault_keys=set(secrets))
     base_env = {key: value for key, value in os.environ.items() if not key.startswith("ENVVAULT_")}
@@ -139,7 +168,7 @@ def spawn(
     except OSError as exc:
         raise ExecError(f"could not start command: {exc.strerror}") from exc
     record = ExecRecord(
-        exec_id=uuid.uuid4().hex[:16],
+        exec_id=exec_id,
         process=process,
         actor_type=actor_type,
         actor_name=actor_name,
@@ -224,32 +253,110 @@ def stream(
             }
         )
     finally:
-        state.remove_exec(record.exec_id)
-        if record.process.poll() is None:
-            from envvault.runtime import _terminate_process_group
+        finalize(
+            factory,
+            state,
+            record,
+            redactor,
+            finished=finished,
+            exit_code=exit_code,
+            duration_ms=duration_ms,
+            timed_out=timed_out,
+        )
 
-            _terminate_process_group(record.process)
-        with factory() as db:
-            audit.append(
-                db,
-                actor_type=record.actor_type,
-                actor_name=record.actor_name,
-                action="exec.finish" if finished else "exec.cancel",
-                project_slug=record.project_slug,
-                environment=record.environment,
-                command=record.command,
-                result="ok" if finished and exit_code == 0 else "error",
-                detail={
-                    "exec_id": record.exec_id,
-                    "exit_code": exit_code,
-                    "duration_ms": duration_ms,
-                    "redacted_patterns": redactor.pattern_count,
-                    "env_keys": list(record.env_keys),
-                    "timed_out": timed_out,
-                },
-                lock=state.lock,
-            )
-            db.commit()
+
+def finalize(
+    factory: sessionmaker[Session],
+    state: Runtime,
+    record: ExecRecord,
+    redactor: Redactor,
+    *,
+    finished: bool = False,
+    exit_code: int | None = None,
+    duration_ms: int = 0,
+    timed_out: bool = False,
+) -> bool:
+    """Unregister, kill and audit an execution exactly once (B4).
+
+    Called by the SSE generator when it ends and by :class:`ExecStreamingResponse`
+    when the response ends, so a client that disconnects before the generator
+    runs still gets its child killed and an ``exec.cancel`` entry. Returns
+    ``False`` when the execution was already finalized.
+    """
+    with record.finalize_lock:
+        if record.finalized:
+            return False
+        record.finalized = True
+    state.remove_exec(record.exec_id)
+    if record.process.poll() is None:
+        from envvault.runtime import _terminate_process_group
+
+        _terminate_process_group(record.process)
+    with factory() as db:
+        audit.append(
+            db,
+            actor_type=record.actor_type,
+            actor_name=record.actor_name,
+            action="exec.finish" if finished else "exec.cancel",
+            project_slug=record.project_slug,
+            environment=record.environment,
+            command=record.command,
+            result="ok" if finished and exit_code == 0 else "error",
+            detail={
+                "exec_id": record.exec_id,
+                "exit_code": exit_code,
+                "duration_ms": duration_ms,
+                "redacted_patterns": redactor.pattern_count,
+                "env_keys": list(record.env_keys),
+                "timed_out": timed_out,
+            },
+            state=state,
+        )
+        db.commit()
+    return True
+
+
+class ExecStreamingResponse(StreamingResponse):
+    """SSE response that always finalizes its execution when it ends.
+
+    A sync generator's ``finally`` only runs once the generator has started and
+    is closed. Starlette may never start it (client gone before the first byte)
+    or leave it suspended, so the response owns the cleanup too.
+    """
+
+    def __init__(
+        self,
+        factory: sessionmaker[Session],
+        state: Runtime,
+        record: ExecRecord,
+        redactor: Redactor,
+        headers: Mapping[str, str] | None = None,
+    ) -> None:
+        super().__init__(
+            stream(factory, state, record, redactor),
+            media_type="text/event-stream",
+            headers=headers,
+        )
+        self._finalize = partial(finalize, factory, state, record, redactor)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Stream the events, then finalize even on disconnect or cancellation."""
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            with anyio.CancelScope(shield=True):
+                await anyio.to_thread.run_sync(self._finalize)
+
+
+def exec_response(
+    factory: sessionmaker[Session],
+    state: Runtime,
+    record: ExecRecord,
+    redactor: Redactor,
+    headers: Mapping[str, str] | None = None,
+) -> ExecStreamingResponse:
+    """Build the SSE response for a spawned execution."""
+    return ExecStreamingResponse(factory, state, record, redactor, headers=headers)
 
 
 def _read_output(

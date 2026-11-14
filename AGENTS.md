@@ -2,6 +2,21 @@
 
 Guidance for agents working in this repository.
 
+## General practices and project docs
+
+Cross-project rules (TDD, security, quality, git flow, living docs) live in the
+second brain: `~/HD_Repos/cerebro/20_Praticas/Praticas-Essenciais.md` (private repo
+`github.com/raul-gomes/cerebro`). This file only holds what is specific to EnvVault
+and wins on conflict.
+
+Living docs in `docs/` (update in the same commit as the change): `commands.md`
+(every useful command), `lineage.md` (SQLite schema + migrations), `tree_files.md`
+(file responsibilities), `open-items.md` (open items), `GLOSSARY.md`,
+`baseline-review.md` (baseline review), `action-plan.md` (ordered plan), `adr/`.
+
+Git flow: `feature/*` from `develop`, PR back to `develop`; `main` only receives
+`release/*` and `hotfix/*`.
+
 ## What this project is
 
 EnvVault is a local, encrypted vault for project `.env` secrets. A daemon owns
@@ -29,10 +44,9 @@ names and execute commands — never reveal values.
 
 ## Language conventions
 
-- Python: identifiers, docstrings and comments in English.
-- User-facing strings: Portuguese (pt-BR). This includes CLI help/messages, API
-  `detail` messages and the entire web UI.
-- Commit messages: English, imperative mood.
+Everything is in English (ADR 0005), overriding the general pt-BR UI rule:
+identifiers, docstrings, comments, CLI help and messages, API `detail` messages,
+the web UI, README, docs and commits (imperative mood).
 
 ## Architecture map
 
@@ -43,12 +57,12 @@ names and execute commands — never reveal values.
 | `src/envvault/services/vault.py` | init/unlock/lock, passphrase change, idle enforcement |
 | `src/envvault/services/secrets.py` | encrypted CRUD, reveal, import/export, exec material |
 | `src/envvault/services/credentials.py` | global/project service credentials, encrypted payload, audited reveal |
-| `src/envvault/services/runner.py` | spawn child, assemble env, redact stream, timeout/process-group kill |
+| `src/envvault/services/runner.py` | spawn child, assemble env, redact stream, timeout/process-group kill, cleanup-once on disconnect |
 | `src/envvault/services/tokens.py` | token creation and scope authorization |
 | `src/envvault/services/audit.py` | append-only hash chain |
 | `src/envvault/api/` | FastAPI routers and auth dependencies |
 | `src/envvault/web/` | dependency-free dashboard |
-| `src/envvault/cli.py` | Typer CLI |
+| `src/envvault/cli/` | Typer CLI, one module per command group (`_common.py` holds shared helpers) |
 | `src/envvault/migrations/` | Alembic schema |
 
 Data flow for execution:
@@ -105,7 +119,7 @@ process group. `ENVVAULT_*` variables are stripped from the child env.
 
 - Plain modules, no bundler, no external CDN.
 - `el()` helper creates nodes; append text nodes for user data.
-- pt-BR copy, dark theme tokens in `app.css`.
+- English copy, dark theme tokens in `app.css`.
 - Any new fetch must send the CSRF header for mutations and handle 401/423 by
   returning to the login view.
 

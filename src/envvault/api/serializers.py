@@ -86,6 +86,7 @@ def token_payload(token: ApiToken) -> dict[str, Any]:
         "can_list": token.can_list,
         "can_inject": token.can_inject,
         "allowed_commands": command_list(token),
+        "any_command": token.any_command,
         "created_at": _iso(token.created_at),
         "last_used_at": _iso(token.last_used_at),
         "revoked_at": _iso(token.revoked_at),
@@ -118,6 +119,7 @@ def status_payload(status: VaultStatus) -> dict[str, Any]:
         "initialized": status.initialized,
         "unlocked": status.unlocked,
         "lock_timeout_minutes": status.lock_timeout_minutes,
+        "max_unlock_hours": status.max_unlock_hours,
     }
 
 
