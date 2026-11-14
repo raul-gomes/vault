@@ -1,4 +1,4 @@
-import { $id, view } from "./dom.js";
+import { $id } from "./dom.js";
 import { route } from "./main.js";
 import { state } from "./state.js";
 

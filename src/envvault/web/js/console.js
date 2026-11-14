@@ -1,5 +1,5 @@
 import { ApiError } from "./api.js";
-import { el, section, toast } from "./dom.js";
+import { el, toast } from "./dom.js";
 import { showLogin } from "./shell.js";
 import { state } from "./state.js";
 

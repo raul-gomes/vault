@@ -8,7 +8,7 @@ export async function renderTokens() {
     { label: "Refresh", onClick: renderTokens },
     { label: "New token", primary: true, onClick: () => openTokenDialog() },
   ]);
-  const [tokens, projects] = await Promise.all([api("/v1/tokens"), loadProjects()]);
+  const [tokens] = await Promise.all([api("/v1/tokens"), loadProjects()]);
   const items = tokens.items;
   const rows = items.map((token) => [
     el("span", { class: "mono" }, token.name),

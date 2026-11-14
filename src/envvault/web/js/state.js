@@ -1,5 +1,3 @@
-import { view } from "./dom.js";
-
 export const state = {
   csrf: null,
   version: "",
