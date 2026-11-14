@@ -104,7 +104,7 @@ def status() -> None:
     if health is None:
         console.print("daemon: [red]not running[/red]")
         return
-    state = "desbloqueado" if health.get("unlocked") else "bloqueado"
+    state = "unlocked" if health.get("unlocked") else "locked"
     color = "green" if health.get("unlocked") else "yellow"
     console.print(f"daemon: [green]ok[/green] at {settings.base_url}")
     console.print(f"vault:  [{color}]{state}[/{color}]")

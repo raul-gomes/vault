@@ -82,7 +82,7 @@ def project_list() -> None:
             ]
             for item in items
         ]
-        _table("Projetos", ["slug", "nome", "path", "segredos", "ambientes"], rows)
+        _table("Projects", ["slug", "name", "path", "secrets", "environments"], rows)
     finally:
         session.close()
 

@@ -20,8 +20,8 @@ When done: tick `[x]`, write `DONE` and the commit.
 - [x] **S5** `envvault backup` + restore steps. Done in PR #9.
 
 ## Quality
-- [ ] **Q1** Coverage 73% → 90% with a floor in CI (`cli.py` 20%, `daemon.py` 0%).
-- [ ] **Q2** Typecheck (`mypy --strict` or `pyright`) in CI; remove `# type: ignore` de `src/envvault/app.py:70`.
+- [x] **Q1** Coverage 73% → 95% (81% before the CLI tests), floor 90% in CI. `src/envvault/cli/` 96-100% per module, `daemon.py` 90%.
+- [ ] **Q2** Typecheck (`mypy --strict` or `pyright`) in CI; remove the `# type: ignore` in `src/envvault/app.py:70`.
 - [x] **Q3** Split `cli.py` into the `cli/` package (this PR) and `web/app.js` into ES modules in `web/js/` (PR #14).
 - [ ] **Q4** Make `_terminate_process_group` public and import it at the top of `runner.py`.
 - [x] **Q5** Everything in English (ADR 0005); AGENTS.md fixed in the translation PR.

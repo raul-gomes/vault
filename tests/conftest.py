@@ -16,6 +16,9 @@ from envvault.app import create_app
 from envvault.config import Settings
 from envvault.services import vault
 
+# The `cli` fixture (CLI against an in-process daemon).
+pytest_plugins = ["tests.cli_support"]
+
 PASSPHRASE = "correct horse battery staple"
 SECRET_VALUE = "s3cr3t-value-12345"
 

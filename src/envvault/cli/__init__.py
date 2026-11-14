@@ -29,5 +29,5 @@ def main() -> None:
     try:
         app()
     except CliError as exc:
-        typer.secho(f"erro: {exc}", fg=typer.colors.RED, err=True)
+        typer.secho(f"error: {exc}", fg=typer.colors.RED, err=True)
         raise SystemExit(1) from None

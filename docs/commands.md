@@ -9,7 +9,7 @@ command? Update this file in the same commit. Usage details are in `README.md`.
 | --- | --- |
 | `uv sync` | Install dependencies (includes the `dev` group). |
 | `uv run pytest` | Tests. `uv run pytest tests/<file>.py` runs only the related ones. |
-| `uv run pytest --cov=envvault --cov-report=term-missing` | Coverage per file. |
+| `uv run pytest --cov=envvault --cov-report=term-missing --cov-fail-under=90` | Coverage per file, same floor as CI. |
 | `uv run ruff check .` | Lint. `--fix` fixes what is automatic. |
 | `uv run ruff format .` | Format. `--check` only checks (what CI runs). |
 | `ENVVAULT_HOME=$(mktemp -d) uv run envvault serve` | Test daemon in the foreground, with a throwaway vault. |

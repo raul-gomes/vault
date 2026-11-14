@@ -38,6 +38,7 @@ app.add_typer(credential_app, name="credential")
 
 console = Console()
 PROJECT_FILE = ".envvault.toml"
+HTTP_TIMEOUT_SECONDS = 30.0
 
 
 class CliError(Exception):
@@ -73,7 +74,7 @@ class UserSession:
 # --------------------------------------------------------------------------- #
 def _fail(message: str, code: int = 1) -> NoReturn:
     """Print an error and exit non-zero."""
-    typer.secho(f"erro: {message}", fg=typer.colors.RED, err=True)
+    typer.secho(f"error: {message}", fg=typer.colors.RED, err=True)
     raise typer.Exit(code)
 
 
@@ -103,10 +104,21 @@ def _raise_for_status(response: httpx.Response) -> None:
     raise CliError(f"HTTP {response.status_code}: {detail}")
 
 
+def _http_client(
+    settings: Settings,
+    *,
+    timeout: float | httpx.Timeout = HTTP_TIMEOUT_SECONDS,
+    headers: dict[str, str] | None = None,
+) -> httpx.Client:
+    """Every HTTP client the CLI uses to reach the daemon (seam for tests)."""
+    return httpx.Client(base_url=settings.base_url, timeout=timeout, headers=headers)
+
+
 def _health(settings: Settings, timeout: float = 1.0) -> dict[str, Any] | None:
     """Return the daemon health payload, or None when it is not reachable."""
     try:
-        response = httpx.get(f"{settings.base_url}/v1/health", timeout=timeout)
+        with _http_client(settings, timeout=timeout) as client:
+            response = client.get("/v1/health")
     except httpx.HTTPError:
         return None
     if response.status_code != 200:
@@ -140,7 +152,7 @@ def _login(settings: Settings, passphrase: str | None = None) -> UserSession:
     """Unlock the vault and return an in-memory CLI session."""
     ensure_daemon(settings)
     secret = passphrase or typer.prompt("Passphrase", hide_input=True)
-    client = httpx.Client(base_url=settings.base_url, timeout=30.0)
+    client = _http_client(settings)
     try:
         response = client.post("/v1/auth/login", json={"passphrase": secret})
         _raise_for_status(response)

@@ -143,15 +143,15 @@ def credential_show(
             console.print("[green]Password copied to the clipboard.[/green]")
             return
         rows = [
-            ["nome", data["name"]],
-            ["categoria", data["category"]],
-            ["escopo", data["project"]["slug"] if data.get("project") else "global"],
+            ["name", data["name"]],
+            ["category", data["category"]],
+            ["scope", data["project"]["slug"] if data.get("project") else "global"],
             ["username", data.get("username") or "—"],
             ["password", data.get("password") or "—"],
             ["url", data.get("url") or "—"],
-            ["notas", data.get("notes") or "—"],
+            ["notes", data.get("notes") or "—"],
         ]
-        _table(f"Credencial · {data['name']}", ["campo", "valor"], rows)
+        _table(f"Credential · {data['name']}", ["field", "value"], rows)
     finally:
         session.close()
 
