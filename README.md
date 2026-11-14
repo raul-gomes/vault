@@ -1,303 +1,302 @@
 # EnvVault
 
-Cofre local e criptografado para os `.env` dos seus projetos. A ideia central:
-um agente (Claude, scripts, CI local) **usa** os segredos sem **vê-los**. Quem
-descriptografa e injeta é o daemon do cofre; a saída volta redigida.
+Local encrypted vault for your projects' `.env` files. The core idea: an agent
+(Claude, scripts, local CI) **uses** the secrets without **seeing** them. The
+vault daemon decrypts and injects; the output comes back redacted.
 
-> **Não há recuperação de passphrase.** Se você perdê-la, os segredos são
-> irrecuperáveis. Guarde-a num gerenciador de senhas e faça backup de
-> `~/.envvault` (o backup sem a passphrase não serve para nada).
-
----
-
-## 1. O que é e o que não é
-
-**É:**
-- Um cofre único, local, em SQLite, que gerencia os segredos de vários projetos.
-- Um broker de execução: recebe um comando, injeta as variáveis e devolve a
-  saída **redigida**.
-- Um painel web local (loopback) para você gerenciar tudo.
-- Um log de auditoria append-only, encadeado por hash.
-
-**Não é:**
-- Um `.env` dentro de cada projeto. Os projetos não guardam segredos.
-- Um gerenciador de segredos na nuvem.
-- Uma sandbox contra comando malicioso (veja [limitações](#8-segurança)).
+> **There is no passphrase recovery.** If you lose it, the secrets are
+> unrecoverable. Keep it in a password manager and back up `~/.envvault` (a
+> backup without the passphrase is useless).
 
 ---
 
-## 2. Como funciona
+## 1. What it is and what it is not
 
-### 2.1 Visão geral
+**It is:**
+- A single local SQLite vault that manages the secrets of several projects.
+- An execution broker: it receives a command, injects the variables and returns
+  the **redacted** output.
+- A local (loopback) web dashboard for you to manage everything.
+- An append-only, hash-chained audit log.
+
+**It is not:**
+- A `.env` inside each project. Projects do not store secrets.
+- A cloud secret manager.
+- A sandbox against a malicious command (see [limitations](#9-security)).
+
+---
+
+## 2. How it works
+
+### 2.1 Overview
 
 ```
 ┌──────────────────────┐        ┌────────────────────────────────────┐
-│  você (navegador)    │        │  daemon do EnvVault                │
-│  ou CLI              │──────▶ │  127.0.0.1:8787                    │
+│  you (browser)       │        │  EnvVault daemon                   │
+│  or CLI              │──────▶ │  127.0.0.1:8787                    │
 └──────────────────────┘        │                                    │
-                                │  ~/.envvault/vault.db (cripto)     │
-┌──────────────────────┐        │  chave de dados (DEK) só na memória│
-│  agente (token ev_…) │──────▶ │                                    │
+                                │  ~/.envvault/vault.db (encrypted)  │
+┌──────────────────────┐        │  data key (DEK) in memory only     │
+│  agent (token ev_…)  │──────▶ │                                    │
 └──────────────────────┘        └───────────────┬────────────────────┘
-                                                │ descriptografa
+                                                │ decrypts
                                                 ▼
                                    ┌──────────────────────────┐
-                                   │ processo filho           │
-                                   │ env com os segredos      │
+                                   │ child process            │
+                                   │ env with the secrets     │
                                    └────────────┬─────────────┘
                                                 │ stdout/stderr
                                                 ▼
-                                   redator → SSE redigido → cliente
+                                   redactor → redacted SSE → client
 ```
 
-O ponto crítico: **o daemon inicia o processo**. O valor em claro nunca é
-serializado em uma resposta HTTP. Ele existe só na memória do daemon e no
-ambiente do processo filho.
+The critical point: **the daemon starts the process**. The plain value is never
+serialized in an HTTP response. It exists only in the daemon's memory and in the
+child process environment.
 
-### 2.2 O cofre é global; os projetos são registros
+### 2.2 The vault is global; projects are records
 
 ```
-~/.envvault/                 ← um cofre para tudo
-  vault.db                   ← banco criptografado
+~/.envvault/                 ← one vault for everything
+  vault.db                   ← encrypted database
   daemon.log
   daemon.pid
 
-~/projetos/app-a/            ← projeto registrado
-  .envvault.toml             ← ponteiro, sem segredo
+~/projects/app-a/            ← registered project
+  .envvault.toml             ← pointer, no secrets
   src/...
 
-~/projetos/app-b/            ← outro projeto, mesmo cofre
+~/projects/app-b/            ← another project, same vault
   .envvault.toml
 ```
 
-- `envvault init` cria o cofre **uma vez**.
-- `envvault project add app-a --path ~/projetos/app-a` apenas grava slug +
-  caminho no banco. Nada é copiado para o projeto.
-- `.envvault.toml` é opcional e versionável: diz apenas qual projeto/ambiente
-  usar quando você está naquele diretório.
-- O isolamento é lógico: cada segredo pertence a `projeto + ambiente + chave`,
-  e cada token de agente é preso a um projeto e a ambientes específicos.
+- `envvault init` creates the vault **once**.
+- `envvault project add app-a --path ~/projects/app-a` only stores the slug +
+  path in the database. Nothing is copied into the project.
+- `.envvault.toml` is optional and can be committed: it only says which
+  project/environment to use when you are in that directory.
+- Isolation is logical: each secret belongs to `project + environment + key`,
+  and each agent token is bound to one project and specific environments.
 
-### 2.3 Criptografia
+### 2.3 Cryptography
 
-- A passphrase mestra deriva uma **KEK** com **Argon2id** (salt aleatório,
-  custo configurável).
-- A KEK embrulha (AES-256-GCM) uma **DEK** aleatória, que é a chave que
-  realmente cifra os segredos.
-- Cada segredo é cifrado com AES-256-GCM e **AAD** ligado a
-  `project_id/environment/key/version`. Isso impede trocar ciphertext entre
-  projetos/ambientes/chaves ou voltar para uma versão antiga.
-- A DEK fica **só na memória**. Trocar a passphrase re-embrulha a DEK; os
-  segredos não são re-criptografados.
-- Arquivos do cofre: `0600`; diretório: `0700`.
+- The master passphrase derives a **KEK** with **Argon2id** (random salt,
+  configurable cost).
+- The KEK wraps (AES-256-GCM) a random **DEK**, which is the key that actually
+  encrypts the secrets.
+- Each secret is encrypted with AES-256-GCM and an **AAD** bound to
+  `project_id/environment/key/version`. This prevents swapping ciphertext
+  between projects/environments/keys or rolling back to an old version.
+- The DEK lives **in memory only**. Changing the passphrase re-wraps the DEK;
+  the secrets are not re-encrypted.
+- Vault files: `0600`; directory: `0700`.
 
-### 2.4 Dois planos de acesso
+### 2.4 Two access planes
 
-| | Sessão humana (você) | Token de agente |
+| | Human session (you) | Agent token |
 |---|---|---|
-| Como autentica | passphrase → cookie + CSRF | `Authorization: Bearer ev_…` |
-| Lista nomes de chaves | sim | sim, se `can_list` |
-| Executa com injeção | sim | sim, se `can_inject` |
-| Revela valor | **sim**, revalidando a passphrase | **nunca** |
-| Exporta `.env` | **sim**, revalidando a passphrase | **nunca** |
-| Gerencia tokens/projetos | sim | não |
+| How it authenticates | passphrase → cookie + CSRF | `Authorization: Bearer ev_…` |
+| Lists key names | yes | yes, if `can_list` |
+| Runs with injection | yes | yes, if `can_inject` |
+| Reveals a value | **yes**, re-checking the passphrase | **never** |
+| Exports `.env` | **yes**, re-checking the passphrase | **never** |
+| Manages tokens/projects | yes | no |
 
-### 2.5 Redação da saída
+### 2.5 Output redaction
 
-O daemon substitui ocorrências dos valores por `[REDACTED:CHAVE]`, incluindo:
+The daemon replaces occurrences of the values with `[REDACTED:KEY]`, including:
 
-- valor cru;
-- URL-encoded e `quote_plus`;
-- base64 padrão e URL-safe.
+- the raw value;
+- URL-encoded and `quote_plus`;
+- standard and URL-safe base64.
 
-Valores com menos de 6 caracteres não são redigidos (para não transformar
-`8080` ou `true` em ruído).
+Values shorter than 6 characters are not redacted (so `8080` or `true` do not
+turn into noise).
 
-### 2.6 Bloqueio e auditoria
+### 2.6 Lock and audit log
 
-- Após `N` minutos sem atividade, a DEK sai da memória, as sessões caem e os
-  processos em execução são encerrados.
-- Toda ação relevante grava um evento. Cada evento contém o hash do anterior;
-  `envvault verify` recomputa a cadeia e detecta adulteração.
+- After `N` minutes of inactivity, the DEK leaves memory, sessions drop and
+  running processes are terminated.
+- Every relevant action records an event. Each event contains the hash of the
+  previous one; `envvault verify` recomputes the chain and detects tampering.
 
 ---
 
-## 3. Como colocar para funcionar
+## 3. Getting it running
 
-### 3.1 Requisitos
+### 3.1 Requirements
 
 - Python **3.12+**
 - [`uv`](https://docs.astral.sh/uv/)
-- Linux ou macOS (o runner usa grupos de processo POSIX)
+- Linux or macOS (the runner uses POSIX process groups)
 
-### 3.2 Instalação
+### 3.2 Installation
 
 ```bash
-cd /caminho/para/envvault
+cd /path/to/envvault
 uv sync
 ```
 
-Isso cria o `.venv` e instala as dependências. Os comandos abaixo usam
-`uv run envvault` de dentro do repositório.
+This creates `.venv` and installs the dependencies. The commands below use
+`uv run envvault` from inside the repository.
 
-Para usar de qualquer diretório, instale o binário uma vez:
+To use it from any directory, install the binary once:
 
 ```bash
-uv tool install /caminho/para/envvault
-# agora: envvault <comando>
+uv tool install /path/to/envvault
+# now: envvault <command>
 ```
 
-### 3.3 Passo 1 — criar o cofre
+### 3.3 Step 1 — create the vault
 
 ```bash
 uv run envvault init
 ```
 
-- Pede a passphrase mestra (mínimo 10 caracteres) com confirmação.
-- Cria `~/.envvault/vault.db`.
-- Sobe o daemon em segundo plano em `http://127.0.0.1:8787`.
+- Asks for the master passphrase (minimum 10 characters) with confirmation.
+- Creates `~/.envvault/vault.db`.
+- Starts the daemon in the background at `http://127.0.0.1:8787`.
 
-Confira:
+Check:
 
 ```bash
 uv run envvault status
 ```
 
-### 3.4 Passo 2 — registrar um projeto
+### 3.4 Step 2 — register a project
 
 ```bash
-cd ~/projetos/meu-app
-uv run --project /caminho/para/envvault envvault project add meu-app --path .
+cd ~/projects/my-app
+uv run --project /path/to/envvault envvault project add my-app --path .
 ```
 
-O caminho precisa existir. O comando pede a passphrase (a CLI não mantém sessão
-entre execuções).
+The path must exist. The command asks for the passphrase (the CLI does not keep
+a session between runs).
 
-### 3.5 Passo 3 — vincular o diretório (opcional, recomendado)
+### 3.5 Step 3 — link the directory (optional, recommended)
 
 ```bash
-cd ~/projetos/meu-app
-uv run --project /caminho/para/envvault envvault link --project meu-app -e dev
+cd ~/projects/my-app
+uv run --project /path/to/envvault envvault link --project my-app -e dev
 ```
 
-Cria `.envvault.toml`:
+Creates `.envvault.toml`:
 
 ```toml
-project = "meu-app"
+project = "my-app"
 environment = "dev"
 ```
 
-A partir daí, dentro desse diretório, você pode omitir `--project` e
+From then on, inside that directory, you can omit `--project` and
 `--environment`.
 
-### 3.6 Passo 4 — trazer os segredos
+### 3.6 Step 4 — bring in the secrets
 
-Importe o `.env` existente:
-
-```bash
-uv run --project /caminho/para/envvault envvault import .env --delete-file
-```
-
-- `--delete-file` apaga o `.env` depois de importar (o cofre vira a fonte da
-  verdade). Pede confirmação.
-- `--replace` sobrescreve chaves que já existem.
-- O parser aceita comentários, `export`, aspas simples/duplas e **nunca executa**
-  o conteúdo.
-
-Ou crie manualmente:
+Import the existing `.env`:
 
 ```bash
-uv run --project /caminho/para/envvault envvault set API_TOKEN
-# pede o valor oculto
+uv run --project /path/to/envvault envvault import .env --delete-file
 ```
 
-### 3.7 Passo 5 — executar com injeção
+- `--delete-file` deletes the `.env` after importing (the vault becomes the
+  source of truth). Asks for confirmation.
+- `--replace` overwrites keys that already exist.
+- The parser accepts comments, `export`, single/double quotes and **never
+  executes** the content.
+
+Or create manually:
 
 ```bash
-uv run --project /caminho/para/envvault envvault run -- npm run dev
+uv run --project /path/to/envvault envvault set API_TOKEN
+# asks for the value (hidden)
 ```
 
-O comando **não** passa por shell: cada argumento é preservado. O processo roda
-dentro do diretório do projeto.
+### 3.7 Step 5 — run with injection
 
-Exemplos:
+```bash
+uv run --project /path/to/envvault envvault run -- npm run dev
+```
+
+The command does **not** go through a shell: each argument is preserved. The
+process runs inside the project directory.
+
+Examples:
 
 ```bash
 envvault run -- python manage.py migrate
 envvault run --cwd sub/dir -- npm test
 
-# configuração de variáveis montada pelo cofre (sem sobrescrever segredos)
+# variables set up by the vault (without overriding secrets)
 envvault run --env PORT=3001 --env NODE_ENV=development -- npm run dev
 
-# encerra o grupo de processos depois de 120s (útil para servidores de dev)
+# ends the process group after 120s (useful for dev servers)
 envvault run --env PORT=3001 --timeout 120 -- npm run dev
 ```
 
-O cofre monta o ambiente do processo assim:
+The vault builds the process environment like this:
 
-1. ambiente atual do daemon (sem nenhuma variável `ENVVAULT_*`);
-2. segredos do projeto/ambiente, descriptografados em memória;
-3. variáveis extras enviadas na requisição (`env`).
+1. the daemon's current environment (without any `ENVVAULT_*` variable);
+2. the project/environment secrets, decrypted in memory;
+3. extra variables sent in the request (`env`).
 
-Chaves `ENVVAULT_*` são reservadas e uma variável extra **não pode** sobrescrever
-uma chave que existe no cofre — a requisição é rejeitada com `400`. A auditoria
-registra apenas os **nomes** das variáveis extras, nunca os valores.
+`ENVVAULT_*` keys are reserved and an extra variable **cannot** override a key
+that exists in the vault — the request is rejected with `400`. The audit log
+records only the **names** of the extra variables, never the values.
 
-Se o vault estiver bloqueado, a CLI pede a passphrase.
+If the vault is locked, the CLI asks for the passphrase.
 
-### 3.8 Passo 6 — abrir o dashboard
+### 3.8 Step 6 — open the dashboard
 
 <http://127.0.0.1:8787>
 
-Lá você encontra visão geral, projetos, abas de ambiente, segredos, gerador de
-senha, console de execução, import/export, tokens, auditoria e configurações.
-O daemon escuta **somente** em loopback.
+There you find the overview, projects, environment tabs, secrets, password
+generator, execution console, import/export, tokens, audit log and settings.
+The daemon listens **only** on loopback.
 
-### 3.9 Passo 7 — dar acesso ao Claude
+### 3.9 Step 7 — give Claude access
 
-Crie um token restrito:
+Create a restricted token:
 
 ```bash
 uv run envvault token create \
-  --name claude-meu-app \
-  --project meu-app \
+  --name claude-my-app \
+  --project my-app \
   --environment dev \
   --allow "npm run" \
   --allow "pytest"
 ```
 
-Por padrão o valor **não é impresso**: ele é gravado em
-`~/.envvault/agent-tokens/meu-app.token` com permissões `0600` (diretório
-`0700`). Um arquivo por projeto — assim você roda comandos de **qualquer
-pasta**, sem exportar token e sem `cd`:
+By default the value is **not printed**: it is saved to
+`~/.envvault/agent-tokens/my-app.token` with `0600` permissions (directory
+`0700`). One file per project — so you run commands from **any directory**,
+without exporting a token and without `cd`:
 
 ```bash
 cd ~/HD_Repos
-envvault run -p meu-app -- npm run dev
-envvault keys -p meu-app -e dev      # nomes de chaves (nunca valores)
-envvault context -p meu-app          # escopo do token
+envvault run -p my-app -- npm run dev
+envvault keys -p my-app -e dev      # key names (never values)
+envvault context -p my-app          # token scope
 ```
 
-O comando roda na pasta em que você está, se ela estiver dentro da pasta
-registrada do projeto (ex.: `admin/`). Chamado de fora do projeto, roda na raiz
-dele. `--cwd sub/dir` é sempre relativo à raiz do projeto; pasta fora do projeto
-é recusada.
+The command runs in the directory you are in, if it is inside the project's
+registered directory (e.g. `admin/`). Called from outside the project, it runs
+in the project root. `--cwd sub/dir` is always relative to the project root; a
+directory outside the project is refused.
 
-Se quiser o valor bruto (outra máquina, outro agente), use `--no-save`; a CLI
-imprime o token uma única vez. `ENVVAULT_TOKEN` continua funcionando como
-override explícito e tem prioridade sobre o arquivo do projeto.
+If you want the raw value (another machine, another agent), use `--no-save`; the
+CLI prints the token only once. `ENVVAULT_TOKEN` still works as an explicit
+override and takes priority over the project file.
 
-Todo token que executa precisa de pelo menos um `--allow` (comparado palavra por
-palavra: `--allow "npm run"` libera `npm run dev`, mas não `npm run-script`).
-Para liberar tudo, use `--any-command` de propósito. Tokens antigos sem lista
-são recusados: recrie-os (ADR 0003).
-`envvault token list` mostra na coluna `local` qual token está salvo no disco, e
-`envvault token revoke` remove o arquivo quando ele corresponde ao token
-revogado.
+Every token that executes needs at least one `--allow` (matched word by word:
+`--allow "npm run"` allows `npm run dev`, but not `npm run-script`). To allow
+everything, use `--any-command` on purpose. Old tokens without a list are
+refused: recreate them (ADR 0003).
+`envvault token list` shows in the `local` column which token is saved on disk,
+and `envvault token revoke` removes the file when it matches the revoked token.
 
-#### Requisição direta (Claude, scripts, integrações)
+#### Direct request (Claude, scripts, integrations)
 
-O agente pode montar a execução enviando o comando **e** variáveis extras:
+The agent can build the execution by sending the command **and** extra variables:
 
 ```bash
 curl -sN http://127.0.0.1:8787/v1/agent/exec \
@@ -312,74 +311,74 @@ curl -sN http://127.0.0.1:8787/v1/agent/exec \
   }'
 ```
 
-A resposta é um stream SSE (`start`, `output`, `exit`). O daemon:
+The response is an SSE stream (`start`, `output`, `exit`). The daemon:
 
-- descriptografa os segredos e monta o ambiente;
-- valida as variáveis extras (nome, tamanho, prefixo `ENVVAULT_` e colisão com
-  chaves do cofre);
-- roda o argv sem shell, com grupo de processos próprio;
-- redige qualquer segredo antes de enviar a saída;
-- encerra o grupo ao fim do `timeout_seconds`.
+- decrypts the secrets and builds the environment;
+- validates the extra variables (name, size, `ENVVAULT_` prefix and collision
+  with vault keys);
+- runs the argv without a shell, in its own process group;
+- redacts any secret before sending the output;
+- ends the group when `timeout_seconds` elapses.
 
-O exemplo usa `ENVVAULT_TOKEN`. Com o token salvo em arquivo, prefira a CLI
-(`envvault run -p <projeto> -- ...`), que resolve o token sozinha; para chamar
-o HTTP direto, crie o token com `--no-save` e exporte o valor só naquele
-comando.
+The example uses `ENVVAULT_TOKEN`. With the token saved to a file, prefer the CLI
+(`envvault run -p <project> -- ...`), which resolves the token by itself; to call
+HTTP directly, create the token with `--no-save` and export the value only for
+that command.
 
-Em `GET /v1/agent/context` o próprio token descreve o escopo, os limites e um
-exemplo de requisição — é o que a skill do segundo cérebro consulta.
+On `GET /v1/agent/context` the token itself describes its scope, limits and an
+example request — this is what the second-brain skill consults.
 
 ---
 
-## 4. Uso diário (cheatsheet)
+## 4. Daily use (cheatsheet)
 
 ```bash
-# ciclo de vida
-envvault init                     # cria o cofre e sobe o daemon
-envvault status                   # daemon + estado do cofre
-envvault unlock                   # desbloqueia em memória
-envvault lock                     # descarta a chave e mata execuções
-envvault serve                    # roda o daemon em primeiro plano
-envvault stop                     # para o daemon
-envvault passwd                   # troca a passphrase
+# lifecycle
+envvault init                     # creates the vault and starts the daemon
+envvault status                   # daemon + vault state
+envvault unlock                   # unlocks in memory
+envvault lock                     # discards the key and kills executions
+envvault serve                    # runs the daemon in the foreground
+envvault stop                     # stops the daemon
+envvault passwd                   # changes the passphrase
 
-# projetos
+# projects
 envvault project add <slug> --path .
 envvault project list
 envvault project remove <slug>
 envvault link --project <slug> -e dev
 
-# segredos
-envvault set KEY                  # valor oculto
-envvault set KEY --generate       # gera e grava uma senha
-envvault list                     # nomes e versões (nunca valores)
+# secrets
+envvault set KEY                  # hidden value
+envvault set KEY --generate       # generates and stores a password
+envvault list                     # names and versions (never values)
 envvault remove KEY
-envvault reveal KEY --copy        # revalida passphrase, audita
+envvault reveal KEY --copy        # re-checks passphrase, audits
 envvault import .env [--replace] [--delete-file]
-envvault export --out .env.local  # gera arquivo temporário
+envvault export --out .env.local  # generates a temporary file
 
-# execução
+# execution
 envvault run -- <argv...>
-envvault run -p app -- npm run dev          # de qualquer pasta
+envvault run -p app -- npm run dev          # from any directory
 envvault run -p app --env PORT=3001 --timeout 120 -- npm run dev
 
 # tokens
-envvault token create -n claude -p app -e dev --allow "npm run"   # salva 0600
-envvault token create -n claude -p app --allow pytest --no-save    # imprime uma vez
+envvault token create -n claude -p app -e dev --allow "npm run"   # saves 0600
+envvault token create -n claude -p app --allow pytest --no-save    # prints once
 envvault token list
 envvault token revoke claude
-envvault context -p app            # escopo do token do projeto
-envvault keys -p app -e dev        # nomes de chaves (agente)
+envvault context -p app            # scope of the project's token
+envvault keys -p app -e dev        # key names (agent)
 
-# credenciais de serviços (globais ou por projeto)
-envvault credential add hostinger -c hosting -p meu-app
+# service credentials (global or per project)
+envvault credential add hostinger -c hosting -p my-app
 envvault credential add cloudflare -c dns          # global
-envvault credential list [--project meu-app | --global]
-envvault credential show hostinger                # reveal auditado
-envvault credential update hostinger --username novo@exemplo.com
+envvault credential list [--project my-app | --global]
+envvault credential show hostinger                # audited reveal
+envvault credential update hostinger --username new@example.com
 envvault credential remove hostinger
 
-# auditoria e utilidades
+# audit log and utilities
 envvault audit --limit 50
 envvault verify
 envvault generate -l 48 --count 5
@@ -387,205 +386,207 @@ envvault generate -l 48 --count 5
 
 ---
 
-### Backup e restauração
+### Backup and restore
 
 ```bash
-envvault backup ~/Backups/                 # cria envvault-backup-<data>.db (0600)
-envvault backup /media/hd/vault-nov.db     # ou um arquivo novo (nunca sobrescreve)
+envvault backup ~/Backups/                 # creates envvault-backup-<date>.db (0600)
+envvault backup /media/hd/vault-nov.db     # or a new file (never overwrites)
 ```
 
-O backup é uma cópia consistente do banco **ainda cifrado** (API de backup do
-SQLite): não precisa do daemon nem da passphrase e pode ir para um disco externo
-ou nuvem. Ele só abre com a passphrase **que estava em uso na hora do backup**;
-se você trocar a passphrase depois, guarde a antiga junto com aquele backup ou
-faça um backup novo. Sem a passphrase não há recuperação, por desenho.
+The backup is a consistent copy of the **still-encrypted** database (SQLite
+backup API): it needs neither the daemon nor the passphrase and can go to an
+external disk or the cloud. It only opens with the passphrase **that was in use
+when the backup was made**; if you change the passphrase afterwards, keep the old
+one with that backup or make a new backup. Without the passphrase there is no
+recovery, by design.
 
-Restaurar:
+Restore:
 
 ```bash
 envvault stop
-mv ~/.envvault/vault.db ~/.envvault/vault.db.old    # guarde até conferir
+mv ~/.envvault/vault.db ~/.envvault/vault.db.old    # keep until verified
 cp /media/hd/vault-nov.db ~/.envvault/vault.db
 chmod 600 ~/.envvault/vault.db
-envvault unlock                                     # passphrase da época do backup
-envvault verify                                     # confere a auditoria
+envvault unlock                                     # passphrase from the backup time
+envvault verify                                     # checks the audit log
 ```
 
-Os tokens de agente em `~/.envvault/agent-tokens/` não entram no backup: depois
-de restaurar, recrie os que foram criados após a data do backup.
+Agent tokens in `~/.envvault/agent-tokens/` are not part of the backup: after
+restoring, recreate the ones created after the backup date.
 
 ## 5. `.envvault.toml`
 
-Arquivo versionável, **sem segredos**:
+Committable file, **no secrets**:
 
 ```toml
-project = "meu-app"
+project = "my-app"
 environment = "dev"
 ```
 
-A CLI procura no diretório atual e nos pais. Serve só para não repetir
-`--project`/`--environment`.
+The CLI looks in the current directory and its parents. It only exists so you do
+not repeat `--project`/`--environment`.
 
 ---
 
-## 6. Gerador de senhas
+## 6. Password generator
 
 ```bash
-envvault generate                      # 32 caracteres
+envvault generate                      # 32 characters
 envvault generate -l 48 --count 5
 envvault generate --no-symbols --json
 envvault set DB_PASSWORD --generate
 ```
 
-Usa o CSPRNG do sistema, remove caracteres ambíguos (`I`, `l`, `1`, `O`, `0`) e
-garante ao menos um caractere de cada conjunto selecionado. A UI expõe o mesmo
-gerador no formulário de segredo.
+Uses the system CSPRNG, removes ambiguous characters (`I`, `l`, `1`, `O`, `0`)
+and guarantees at least one character from each selected set. The UI exposes the
+same generator in the secret form.
 
 ---
 
-## 7. Credenciais de serviços
+## 7. Service credentials
 
-Além das variáveis de `.env`, o cofre guarda **logins de serviços externos**
-(Hostinger, Cloudflare, Gmail, SMTP, painéis de API…). Cada credencial pode ser:
+Besides `.env` variables, the vault stores **logins for external services**
+(Hostinger, Cloudflare, Gmail, SMTP, API dashboards…). Each credential can be:
 
-- **global** — compartilhada por todos os projetos (ex.: sua conta pessoal de
-  Cloudflare);
-- **de projeto** — específica de um cliente/contexto (ex.: o painel da Hostinger
-  do cliente A).
+- **global** — shared by all projects (e.g. your personal Cloudflare account);
+- **per project** — specific to a client/context (e.g. client A's Hostinger
+  dashboard).
 
-Nome, categoria e escopo ficam visíveis para busca. Usuário, senha, URL e notas
-são criptografados juntos em um único payload AES-256-GCM, com AAD amarrando o
-id e a versão da credencial. A versão é incrementada a cada edição.
+Name, category and scope are visible for search. Username, password, URL and
+notes are encrypted together in a single AES-256-GCM payload, with an AAD binding
+the credential's id and version. The version is incremented on every edit.
 
 ```bash
 # global
-envvault credential add cloudflare -c dns --username eu@exemplo.com
-# de um projeto
-envvault credential add hostinger -c hosting -p cliente-a --url https://hpanel.hostinger.com
-# listar por escopo
+envvault credential add cloudflare -c dns --username me@example.com
+# for a project
+envvault credential add hostinger -c hosting -p client-a --url https://hpanel.hostinger.com
+# list by scope
 envvault credential list
-envvault credential list --project cliente-a
+envvault credential list --project client-a
 envvault credential list --global
-# ver (revalida a passphrase e audita)
+# view (re-checks the passphrase and audits)
 envvault credential show hostinger
 envvault credential show hostinger --copy
-# mover entre escopos ou trocar a senha
-envvault credential update hostinger -p cliente-b
+# move between scopes or change the password
+envvault credential update hostinger -p client-b
 envvault credential update hostinger --global --generate
 ```
 
-No dashboard, a área **Credenciais** permite criar, buscar, filtrar por projeto,
-revelar com passphrase e excluir. A página de cada projeto também mostra a seção
-**Credenciais do projeto**, com as credenciais daquele projeto e as globais
-disponíveis, revelação direta e criação já no escopo do projeto.
+In the dashboard, the **Credentials** area lets you create, search, filter by
+project, reveal with the passphrase and delete. Each project's page also shows a
+**Project credentials** section, with that project's credentials and the
+available global ones, direct reveal and creation already scoped to the project.
 
-Regras de segurança:
+Security rules:
 
-- tokens de agente **não têm acesso** a credenciais;
-- listagens nunca devolvem usuário, senha, URL ou notas;
-- o reveal exige a passphrase mestra e é registrado em `credential.reveal`;
-- excluir um projeto remove apenas as credenciais daquele projeto; as globais
-  continuam.
+- agent tokens have **no access** to credentials;
+- listings never return username, password, URL or notes;
+- reveal requires the master passphrase and is recorded as `credential.reveal`;
+- deleting a project removes only that project's credentials; global ones
+  remain.
 
 ---
 
-## 8. Variáveis de ambiente
+## 8. Environment variables
 
-| Variável | Padrão | Efeito |
+| Variable | Default | Effect |
 |---|---|---|
-| `ENVVAULT_HOME` | `~/.envvault` | banco, log e PID |
-| `ENVVAULT_HOST` | `127.0.0.1` | bind do daemon |
-| `ENVVAULT_PORT` | `8787` | porta |
-| `ENVVAULT_LOCK_TIMEOUT_MINUTES` | `30` | bloqueio por inatividade |
-| `ENVVAULT_MAX_UNLOCK_HOURS` | `12` | bloqueio absoluto, mesmo com uso contínuo (ADR 0004) |
-| `ENVVAULT_SESSION_IDLE_MINUTES` | `30` | validade da sessão |
-| `ENVVAULT_MAX_EXECS` | `8` | execuções simultâneas |
-| `ENVVAULT_KDF_TIME_COST` | `3` | custo do Argon2id |
-| `ENVVAULT_KDF_MEMORY_KIB` | `65536` | memória do Argon2id (KiB) |
-| `ENVVAULT_KDF_PARALLELISM` | `4` | paralelismo do Argon2id |
+| `ENVVAULT_HOME` | `~/.envvault` | database, log and PID |
+| `ENVVAULT_HOST` | `127.0.0.1` | daemon bind |
+| `ENVVAULT_PORT` | `8787` | port |
+| `ENVVAULT_LOCK_TIMEOUT_MINUTES` | `30` | idle lock |
+| `ENVVAULT_MAX_UNLOCK_HOURS` | `12` | absolute lock, even with continuous use (ADR 0004) |
+| `ENVVAULT_SESSION_IDLE_MINUTES` | `30` | session validity |
+| `ENVVAULT_MAX_EXECS` | `8` | simultaneous executions |
+| `ENVVAULT_KDF_TIME_COST` | `3` | Argon2id cost |
+| `ENVVAULT_KDF_MEMORY_KIB` | `65536` | Argon2id memory (KiB) |
+| `ENVVAULT_KDF_PARALLELISM` | `4` | Argon2id parallelism |
 
 ---
 
-## 9. Segurança
+## 9. Security
 
-**Protege contra:**
-- leitura do banco sem a passphrase;
-- vazamento acidental em logs/build/conversa (redação);
-- exposição de credenciais de serviços em listagens (só o reveal auditado as mostra);
-- adulteração silenciosa do log: a cadeia usa HMAC com chave derivada da DEK e a
-  última entrada fica fixada, então reescrever ou apagar o fim exige a passphrase;
-- CSRF, DNS rebinding e uso do dashboard por outra origem;
-- sessão esquecida (bloqueio por inatividade e bloqueio absoluto de 12 h, aplicados
-  também sem requisições, encerrando comandos em execução).
+**Protects against:**
+- reading the database without the passphrase;
+- accidental leaks in logs/build/conversation (redaction);
+- exposure of service credentials in listings (only the audited reveal shows them);
+- silent tampering with the log: the chain uses an HMAC with a key derived from
+  the DEK and the last entry is pinned, so rewriting or deleting the tail
+  requires the passphrase;
+- CSRF, DNS rebinding and use of the dashboard from another origin;
+- a forgotten session (idle lock and a 12 h absolute lock, enforced even without
+  requests, terminating running commands).
 
-**Não protege contra** (decisão registrada no ADR 0002):
-- **qualquer processo do mesmo usuário do sistema**, inclusive um agente com shell.
-  O daemon roda com o seu usuário, então esse processo consegue:
-  - ler `/proc/<pid>/environ` de qualquer comando que o daemon iniciou e ver os
-    segredos injetados enquanto ele roda;
-  - ler os tokens de **todos** os projetos em `~/.envvault/agent-tokens/`;
-  - ler a memória do daemon.
-  A redação evita vazamento **acidental** (log, build, conversa com o agente);
-  ela não segura um agente que queira o valor de propósito. Para reduzir o
-  estrago: tokens com lista de comandos (ADR 0003), bloqueio absoluto de 12 h
-  (ADR 0004) e auditoria. Isolamento real exigiria rodar o daemon e os comandos
-  com outro usuário do sistema, o que não está planejado;
-- comando **deliberadamente malicioso** autorizado pelo token — ele recebe as
-  variáveis e pode codificá-las/exfiltrá-las de formas que a redação textual não
-  acompanha;
-- kernel/Python/dependências comprometidos;
-- backup do cofre junto com a passphrase.
+**Does not protect against** (decision recorded in ADR 0002):
+- **any process of the same system user**, including an agent with a shell.
+  The daemon runs as your user, so that process can:
+  - read `/proc/<pid>/environ` of any command the daemon started and see the
+    injected secrets while it runs;
+  - read the tokens of **all** projects in `~/.envvault/agent-tokens/`;
+  - read the daemon's memory.
+  Redaction prevents **accidental** leaks (log, build, conversation with the
+  agent); it does not stop an agent that wants the value on purpose. To reduce
+  the damage: tokens with a command list (ADR 0003), a 12 h absolute lock
+  (ADR 0004) and the audit log. Real isolation would require running the daemon
+  and the commands as a different system user, which is not planned;
+- a **deliberately malicious** command authorized by the token — it receives the
+  variables and can encode/exfiltrate them in ways textual redaction does not
+  follow;
+- a compromised kernel/Python/dependencies;
+- a vault backup together with the passphrase.
 
-**Limitações conhecidas:**
-- valores com menos de 6 caracteres não são redigidos;
-- transformações arbitrárias (hash, cifra, split) não são detectadas;
-- token criado com `--any-command` aceita qualquer argv, inclusive
+**Known limitations:**
+- values shorter than 6 characters are not redacted;
+- arbitrary transformations (hash, cipher, split) are not detected;
+- a token created with `--any-command` accepts any argv, including
   `python3 -c "import os; …"`;
-- SQLite não é um cofre de hardware — a proteção em repouso depende da
+- SQLite is not a hardware vault — protection at rest depends on the
   passphrase.
 
 ---
 
-## 10. Solução de problemas
+## 10. Troubleshooting
 
-| Mensagem / sintoma | Causa | Correção |
+| Message / symptom | Cause | Fix |
 |---|---|---|
-| `daemon não está rodando` | daemon parado | `envvault serve` (primeiro plano) ou `envvault init` |
-| `não autenticado` | sessão expirada | rode o comando de novo e informe a passphrase |
-| `vault bloqueado; …` | inatividade | `envvault unlock` |
-| `vault locked after the maximum unlock time` | 12 h desde o desbloqueio | `envvault unlock` |
-| `informe --project` | fora de um diretório com `.envvault.toml` | `envvault link …` ou passe `--project` |
-| `projeto não encontrado: X` | projeto não registrado | `envvault project add X --path .` |
-| `arquivo não encontrado: .env` | não há `.env` no diretório | rode no diretório certo ou crie o `.env` |
-| `já existe um cofre em …` | `init` rodado duas vezes | use o cofre existente; não rode `init` |
-| `npm error … package.json` | o diretório não é um projeto Node | execute o comando do projeto real |
-| `HTTP 423` | cofre bloqueado | desbloqueie |
-| `HTTP 429` | muitas tentativas de passphrase | espere ~1 minuto |
-| porta ocupada | outro processo em `8787` | `ENVVAULT_PORT=8790 envvault serve` |
-| esqueci a passphrase | — | **não há recuperação**; restaure um backup com a passphrase conhecida |
+| `daemon is not running` | daemon stopped | `envvault serve` (foreground) or `envvault init` |
+| `not authenticated` | session expired | run the command again and enter the passphrase |
+| `vault is locked; …` | inactivity | `envvault unlock` |
+| `vault locked after the maximum unlock time` | 12 h since unlock | `envvault unlock` |
+| `provide --project …` | outside a directory with `.envvault.toml` | `envvault link …` or pass `--project` |
+| `project not found: X` | project not registered | `envvault project add X --path .` |
+| `file not found: .env` | there is no `.env` in the directory | run in the right directory or create the `.env` |
+| `a vault already exists at …` | `init` run twice | use the existing vault; do not run `init` |
+| `npm error … package.json` | the directory is not a Node project | run the command in the real project |
+| `HTTP 423` | vault locked | unlock it |
+| `HTTP 429` | too many passphrase attempts | wait ~1 minute |
+| port in use | another process on `8787` | `ENVVAULT_PORT=8790 envvault serve` |
+| forgot the passphrase | — | **no recovery**; restore a backup with a known passphrase |
 
-> A CLI pede a passphrase a cada comando (não persiste sessão). Isso é
-> intencional: a chave não fica em arquivo nem em variável de ambiente.
+> The CLI asks for the passphrase on every command (it does not persist a
+> session). This is intentional: the key is never in a file or an environment
+> variable.
 
 ---
 
-## 11. Estrutura do código
+## 11. Code layout
 
 ```
 src/envvault/
-  api/          rotas FastAPI e dependências de autenticação
+  api/          FastAPI routes and authentication dependencies
   services/     vault, secrets, credentials, projects, tokens, audit, runner, redact, envfile
   migrations/   Alembic
-  web/          dashboard estático (HTML/CSS/JS, sem build)
-  cli.py        interface de linha de comando
+  web/          static dashboard (HTML/CSS/JS, no build)
+  cli.py        command-line interface
   crypto.py     Argon2id + AES-256-GCM
-  runtime.py    estado em memória (DEK, sessões, execuções)
-tests/          testes (pytest)
-docs/adr/       decisões de arquitetura
-AGENTS.md       convenções e invariantes para agentes
+  runtime.py    in-memory state (DEK, sessions, executions)
+tests/          tests (pytest)
+docs/adr/       architecture decisions
+AGENTS.md       conventions and invariants for agents
 ```
 
-## 12. Desenvolvimento
+## 12. Development
 
 ```bash
 uv sync
@@ -594,6 +595,6 @@ uv run ruff check .
 uv run ruff format --check .
 ```
 
-## 13. Licença
+## 13. License
 
 MIT.

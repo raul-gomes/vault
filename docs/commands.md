@@ -1,94 +1,94 @@
-# Comandos úteis
+# Useful commands
 
-Todo comando para desenvolver, rodar e usar o EnvVault. Usou, criou ou mudou um
-comando? Atualize este arquivo no mesmo commit. Detalhes de uso no `README.md`.
+Every command to develop, run and use EnvVault. Used, created or changed a
+command? Update this file in the same commit. Usage details are in `README.md`.
 
-## Desenvolvimento (raiz do repo)
+## Development (repo root)
 
-| Comando | Quando usar |
+| Command | When to use |
 | --- | --- |
-| `uv sync` | Instalar dependências (inclui o grupo `dev`). |
-| `uv run pytest` | Testes. `uv run pytest tests/<arquivo>.py` roda só os relacionados. |
-| `uv run pytest --cov=envvault --cov-report=term-missing` | Cobertura por arquivo. |
-| `uv run ruff check .` | Lint. `--fix` corrige o que for automático. |
-| `uv run ruff format .` | Formatar. `--check` só confere (o que o CI roda). |
-| `ENVVAULT_HOME=$(mktemp -d) uv run envvault serve` | Daemon de teste em primeiro plano, com cofre descartável. |
-| _(sem `alembic.ini`)_ | Nova migration: crie `src/envvault/migrations/versions/000N_<nome>.py` no padrão da anterior (`down_revision` apontando para ela). O daemon aplica sozinho ao subir (`migrate.upgrade`). Nunca edite uma revisão publicada. |
+| `uv sync` | Install dependencies (includes the `dev` group). |
+| `uv run pytest` | Tests. `uv run pytest tests/<file>.py` runs only the related ones. |
+| `uv run pytest --cov=envvault --cov-report=term-missing` | Coverage per file. |
+| `uv run ruff check .` | Lint. `--fix` fixes what is automatic. |
+| `uv run ruff format .` | Format. `--check` only checks (what CI runs). |
+| `ENVVAULT_HOME=$(mktemp -d) uv run envvault serve` | Test daemon in the foreground, with a throwaway vault. |
+| _(no `alembic.ini`)_ | New migration: create `src/envvault/migrations/versions/000N_<name>.py` following the previous one (`down_revision` pointing to it). The daemon applies it on startup (`migrate.upgrade`). Never edit a published revision. |
 
-## Instalar a ferramenta na máquina
+## Install the tool on the machine
 
-| Comando | Quando usar |
+| Command | When to use |
 | --- | --- |
-| `uv tool install --force ~/HD_Repos/vault` | Instalar ou atualizar o `envvault` global depois de mudar o código. |
-| `envvault --help` | Ver todos os comandos. |
+| `uv tool install --force ~/HD_Repos/vault` | Install or update the global `envvault` after changing the code. |
+| `envvault --help` | List all commands. |
 
-## Daemon e cofre
+## Daemon and vault
 
-| Comando | Quando usar |
+| Command | When to use |
 | --- | --- |
-| `envvault init` | Primeira vez: cria o cofre, pede a passphrase e sobe o daemon. |
-| `envvault status` | Estado do daemon e do cofre. |
-| `envvault unlock` / `envvault lock` | Desbloquear / bloquear (o lock mata os comandos em execução). |
-| `envvault serve` | Daemon em primeiro plano (depurar; log em `~/.envvault/daemon.log`). |
-| `envvault stop` | Parar o daemon em segundo plano. |
-| `envvault passwd` | Trocar a passphrase mestra. |
-| Painel web: http://127.0.0.1:8787 | Gerenciar tudo pelo navegador. |
+| `envvault init` | First time: creates the vault, asks for the passphrase and starts the daemon. |
+| `envvault status` | Daemon and vault state. |
+| `envvault unlock` / `envvault lock` | Unlock / lock (lock kills running commands). |
+| `envvault serve` | Daemon in the foreground (debugging; log in `~/.envvault/daemon.log`). |
+| `envvault stop` | Stop the background daemon. |
+| `envvault passwd` | Change the master passphrase. |
+| Web dashboard: http://127.0.0.1:8787 | Manage everything from the browser. |
 
-## Projetos e segredos
+## Projects and secrets
 
-| Comando | Quando usar |
+| Command | When to use |
 | --- | --- |
-| `envvault project add` / `list` / `update <slug> --path <pasta>` / `remove` | Registrar e manter projetos. |
-| `envvault link` | Criar `.envvault.toml` na pasta do projeto (sem segredos). |
-| `envvault import .env -p <slug> -e <ambiente> --delete-file` | Trazer um `.env` existente para o cofre e apagar o arquivo (`--create` cria o projeto). |
-| `envvault set <CHAVE> -p <slug> -e <ambiente>` | Criar ou trocar um segredo (valor pedido oculto). |
-| `envvault list -p <slug> -e <ambiente>` | Nomes e versões (nunca valores). |
-| `envvault remove <CHAVE> -p <slug> -e <ambiente>` | Apagar um segredo. |
-| `envvault reveal <CHAVE> -p <slug>` | Ver um valor (pede a passphrase, auditado). Só humano. |
-| `envvault export -p <slug> -e <ambiente>` | Gerar `.env` temporário. Só humano. |
-| `envvault generate` | Gerar senha forte local. |
+| `envvault project add` / `list` / `update <slug> --path <directory>` / `remove` | Register and maintain projects. |
+| `envvault link` | Create `.envvault.toml` in the project directory (no secrets). |
+| `envvault import .env -p <slug> -e <environment> --delete-file` | Bring an existing `.env` into the vault and delete the file (`--create` creates the project). |
+| `envvault set <KEY> -p <slug> -e <environment>` | Create or change a secret (value is prompted, hidden). |
+| `envvault list -p <slug> -e <environment>` | Names and versions (never values). |
+| `envvault remove <KEY> -p <slug> -e <environment>` | Delete a secret. |
+| `envvault reveal <KEY> -p <slug>` | View a value (asks for the passphrase, audited). Human only. |
+| `envvault export -p <slug> -e <environment>` | Generate a temporary `.env`. Human only. |
+| `envvault generate` | Generate a strong local password. |
 
-## Rodar comandos com os segredos
+## Run commands with secrets
 
-| Comando | Quando usar |
+| Command | When to use |
 | --- | --- |
-| `envvault run -p <slug> -- <comando>` | Rodar com os segredos injetados e a saída redigida. |
-| `envvault run -p <slug> --env PORT=3001 --timeout 120 -- <comando>` | Variável extra não secreta e limite de tempo. |
-| `envvault run -p <slug> --cwd <subpasta> -- <comando>` | Rodar numa subpasta, relativa à raiz do projeto. Sem `--cwd`, roda na pasta atual se ela estiver dentro do projeto; senão, na raiz. |
+| `envvault run -p <slug> -- <command>` | Run with secrets injected and output redacted. |
+| `envvault run -p <slug> --env PORT=3001 --timeout 120 -- <command>` | Extra non-secret variable and a time limit. |
+| `envvault run -p <slug> --cwd <subdirectory> -- <command>` | Run in a subdirectory, relative to the project root. Without `--cwd`, runs in the current directory if it is inside the project; otherwise, in the root. |
 
-## Tokens de agente
+## Agent tokens
 
-| Comando | Quando usar |
+| Command | When to use |
 | --- | --- |
-| `envvault token create -n <nome> -p <slug> --allow "npm run" --allow pytest` | Criar token (salvo em `~/.envvault/agent-tokens/<slug>.token`, `0600`). Pelo menos um `--allow`, comparado palavra por palavra. |
-| `envvault token create -n <nome> -p <slug> --any-command` | Token que aceita qualquer comando (escolha explícita, não recomendada). |
-| `envvault token list` / `envvault token revoke <nome>` | Listar / revogar. |
-| `envvault context -p <slug>` / `envvault keys -p <slug>` | O que o token pode fazer / nomes das chaves. |
+| `envvault token create -n <name> -p <slug> --allow "npm run" --allow pytest` | Create a token (saved in `~/.envvault/agent-tokens/<slug>.token`, `0600`). At least one `--allow`, matched word by word. |
+| `envvault token create -n <name> -p <slug> --any-command` | Token that accepts any command (explicit choice, not recommended). |
+| `envvault token list` / `envvault token revoke <name>` | List / revoke. |
+| `envvault context -p <slug>` / `envvault keys -p <slug>` | What the token can do / key names. |
 
-## Credenciais de serviços
+## Service credentials
 
-| Comando | Quando usar |
+| Command | When to use |
 | --- | --- |
-| `envvault credential add` / `list` / `update` / `remove` | Logins de hosting, DNS, e-mail (globais ou por projeto). |
-| `envvault credential show <nome>` | Ver os campos (auditado). Só humano. |
+| `envvault credential add` / `list` / `update` / `remove` | Logins for hosting, DNS, email (global or per project). |
+| `envvault credential show <name>` | View the fields (audited). Human only. |
 
 ## Backup
 
-| Comando | Quando usar |
+| Command | When to use |
 | --- | --- |
-| `envvault backup <pasta-ou-arquivo>` | Cópia do banco ainda cifrado (`0600`, nunca sobrescreve). Restauração no README. |
+| `envvault backup <directory-or-file>` | Copy of the still-encrypted database (`0600`, never overwrites). Restore steps in the README. |
 
-## Auditoria
+## Audit log
 
-| Comando | Quando usar |
+| Command | When to use |
 | --- | --- |
-| `envvault audit` | Últimos eventos. |
-| `envvault verify` | Conferir a integridade da cadeia de hash. |
+| `envvault audit` | Latest events. |
+| `envvault verify` | Check the integrity of the hash chain. |
 
-## Git e CI
+## Git and CI
 
-| Comando | Quando usar |
+| Command | When to use |
 | --- | --- |
-| `git switch develop && git pull && git switch -c feature/<nome>` | Começar uma mudança. |
-| `gh pr create --base develop` | Abrir PR da feature. |
-| `gh pr checks <número>` / `gh run view <id> --log-failed` | Ver o CI e por que falhou. |
+| `git switch develop && git pull && git switch -c feature/<name>` | Start a change. |
+| `gh pr create --base develop` | Open the feature PR. |
+| `gh pr checks <number>` / `gh run view <id> --log-failed` | See CI and why it failed. |
